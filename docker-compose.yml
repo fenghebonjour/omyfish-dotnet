@@ -98,16 +98,18 @@ services:
     environment:
       MODEL_PATH: /checkpoints/best.pt
       CLASSES_PATH: /checkpoints/classes.json
+      METADATA_PATH: /metadata/fish_info.json
     volumes:
       - ../../omyfish/checkpoints:/checkpoints:ro
+      - ../../omyfish/data/metadata:/metadata:ro
     networks: [omyfish-net]
 
   # ─── .NET Microservices ────────────────────────────────────────────────────
 
   identity-service:
     build:
-      context: ./src/services/IdentityService
-      dockerfile: OMyFish.IdentityService.Api/Dockerfile
+      context: ./src
+      dockerfile: services/IdentityService/OMyFish.IdentityService.Api/Dockerfile
     ports:
       - "8081:8080"
     environment:
@@ -120,8 +122,8 @@ services:
 
   species-service:
     build:
-      context: ./src/services/SpeciesService
-      dockerfile: OMyFish.SpeciesService.Api/Dockerfile
+      context: ./src
+      dockerfile: services/SpeciesService/OMyFish.SpeciesService.Api/Dockerfile
     ports:
       - "8082:8080"
     environment:
@@ -138,8 +140,8 @@ services:
 
   observation-service:
     build:
-      context: ./src/services/ObservationService
-      dockerfile: OMyFish.ObservationService.Api/Dockerfile
+      context: ./src
+      dockerfile: services/ObservationService/OMyFish.ObservationService.Api/Dockerfile
     ports:
       - "8083:8080"
     environment:
@@ -158,8 +160,8 @@ services:
 
   notification-service:
     build:
-      context: ./src/services/NotificationService
-      dockerfile: OMyFish.NotificationService/Dockerfile
+      context: ./src
+      dockerfile: services/NotificationService/OMyFish.NotificationService/Dockerfile
     ports:
       - "8084:8080"
     environment:
@@ -172,8 +174,8 @@ services:
 
   api-gateway:
     build:
-      context: ./src/services/ApiGateway
-      dockerfile: OMyFish.ApiGateway/Dockerfile
+      context: ./src
+      dockerfile: services/ApiGateway/OMyFish.ApiGateway/Dockerfile
     ports:
       - "8080:8080"
     environment:
