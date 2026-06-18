@@ -1,0 +1,200 @@
+version: "3.9"
+
+networks:
+  omyfish-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+
+  # ─── Infrastructure ────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      POSTGRES_DB: omyfish
+      POSTGRES_USER: omyfish
+      POSTGRES_PASSWORD: omyfish_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [omyfish-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omyfish"]
+      interval: 10s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: omyfish
+      RABBITMQ_DEFAULT_PASS: omyfish_dev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks: [omyfish-net]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: omyfish
+      MINIO_ROOT_PASSWORD: omyfish_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks: [omyfish-net]
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [omyfish-net]
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+    networks: [omyfish-net]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    ports:
+      - "16686:16686"
+      - "14250:14250"
+    networks: [omyfish-net]
+
+  # ─── AI Service (Python — preserved from omyfish) ─────────────────────────
+
+  ai-service:
+    build:
+      context: ./src/services/AIService
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_PATH: /checkpoints/best.pt
+      CLASSES_PATH: /checkpoints/classes.json
+    volumes:
+      - ../../omyfish/checkpoints:/checkpoints:ro
+    networks: [omyfish-net]
+
+  # ─── .NET Microservices ────────────────────────────────────────────────────
+
+  identity-service:
+    build:
+      context: ./src/services/IdentityService
+      dockerfile: OMyFish.IdentityService.Api/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:14250"
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [omyfish-net]
+
+  species-service:
+    build:
+      context: ./src/services/SpeciesService
+      dockerfile: OMyFish.SpeciesService.Api/Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: omyfish
+      RabbitMq__Password: omyfish_dev
+      AIService__BaseUrl: "http://ai-service:8000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:14250"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks: [omyfish-net]
+
+  observation-service:
+    build:
+      context: ./src/services/ObservationService
+      dockerfile: OMyFish.ObservationService.Api/Dockerfile
+    ports:
+      - "8083:8080"
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: omyfish
+      RabbitMq__Password: omyfish_dev
+      MinIO__Endpoint: "http://minio:9000"
+      MinIO__AccessKey: omyfish
+      MinIO__SecretKey: omyfish_dev
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:14250"
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks: [omyfish-net]
+
+  notification-service:
+    build:
+      context: ./src/services/NotificationService
+      dockerfile: OMyFish.NotificationService/Dockerfile
+    ports:
+      - "8084:8080"
+    environment:
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: omyfish
+      RabbitMq__Password: omyfish_dev
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+    networks: [omyfish-net]
+
+  api-gateway:
+    build:
+      context: ./src/services/ApiGateway
+      dockerfile: OMyFish.ApiGateway/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      Services__Identity: "http://identity-service:8080"
+      Services__Species: "http://species-service:8080"
+      Services__Observation: "http://observation-service:8080"
+    depends_on:
+      - identity-service
+      - species-service
+      - observation-service
+    networks: [omyfish-net]
+
+  # ─── Frontend ─────────────────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./frontend/omyfish-web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8080"
+    depends_on: [api-gateway]
+    networks: [omyfish-net]

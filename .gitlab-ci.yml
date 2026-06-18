@@ -1,0 +1,110 @@
+stages:
+  - build
+  - test
+  - docker
+  - deploy
+
+variables:
+  DOTNET_VERSION: "10.0"
+  DOCKER_REGISTRY: $CI_REGISTRY
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+# ─── Build ────────────────────────────────────────────────────────────────────
+
+build:
+  stage: build
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  script:
+    - dotnet restore omyfish-dotnet.sln
+    - dotnet build omyfish-dotnet.sln --no-restore -c Release
+  artifacts:
+    paths:
+      - "**/bin/Release/**"
+    expire_in: 1 hour
+
+# ─── Test ─────────────────────────────────────────────────────────────────────
+
+unit-test:
+  stage: test
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  script:
+    - dotnet test omyfish-dotnet.sln --no-build -c Release
+        --logger "junit;LogFilePath=test-results.xml"
+  artifacts:
+    reports:
+      junit: "**/test-results.xml"
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+
+.docker-build: &docker-build
+  stage: docker
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  only:
+    - main
+    - develop
+
+docker-species-service:
+  <<: *docker-build
+  script:
+    - docker build -t $DOCKER_REGISTRY/omyfish/species-service-dotnet:$IMAGE_TAG
+        -f src/services/SpeciesService/OMyFish.SpeciesService.Api/Dockerfile
+        src/services/SpeciesService
+    - docker push $DOCKER_REGISTRY/omyfish/species-service-dotnet:$IMAGE_TAG
+
+docker-observation-service:
+  <<: *docker-build
+  script:
+    - docker build -t $DOCKER_REGISTRY/omyfish/observation-service-dotnet:$IMAGE_TAG
+        -f src/services/ObservationService/OMyFish.ObservationService.Api/Dockerfile
+        src/services/ObservationService
+    - docker push $DOCKER_REGISTRY/omyfish/observation-service-dotnet:$IMAGE_TAG
+
+docker-api-gateway:
+  <<: *docker-build
+  script:
+    - docker build -t $DOCKER_REGISTRY/omyfish/api-gateway-dotnet:$IMAGE_TAG
+        -f src/services/ApiGateway/OMyFish.ApiGateway/Dockerfile
+        src/services/ApiGateway
+    - docker push $DOCKER_REGISTRY/omyfish/api-gateway-dotnet:$IMAGE_TAG
+
+# ─── Deploy ───────────────────────────────────────────────────────────────────
+
+deploy-staging:
+  stage: deploy
+  image: dtzar/helm-kubectl:3.15
+  environment:
+    name: staging
+    url: https://staging.omyfish.io
+  script:
+    - helm upgrade --install omyfish-dotnet ./infrastructure/helm/omyfish
+        --namespace omyfish-dotnet
+        --create-namespace
+        --set image.speciesService.tag=$IMAGE_TAG
+        --set image.observationService.tag=$IMAGE_TAG
+        --set image.apiGateway.tag=$IMAGE_TAG
+        --atomic --timeout 5m
+  only:
+    - develop
+
+deploy-production:
+  stage: deploy
+  image: dtzar/helm-kubectl:3.15
+  environment:
+    name: production
+    url: https://omyfish.io
+  script:
+    - helm upgrade --install omyfish-dotnet ./infrastructure/helm/omyfish
+        --namespace omyfish-dotnet-prod
+        --create-namespace
+        --values ./infrastructure/helm/omyfish/values.yaml
+        --values ./infrastructure/helm/omyfish/values-prod.yaml
+        --set image.speciesService.tag=$IMAGE_TAG
+        --set image.observationService.tag=$IMAGE_TAG
+        --atomic --timeout 10m
+  only:
+    - main
+  when: manual

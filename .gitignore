@@ -1,0 +1,75 @@
+# .NET
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+TestResults/
+BenchmarkDotNet.Artifacts/
+*.coverage
+*.coveragexml
+_UpgradeReport_Files/
+*.publish.xml
+*.azurePubxml
+*.pubxml
+*.publishproj
+PublishScripts/
+*.pfx
+*.publishsettings
+orleans.codegen.cs
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.npm
+npm-debug.log*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python (AI service)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+checkpoints/
+*.pt
+*.onnx
+
+# Docker volumes
+.docker/
+
+# Secrets
+*.env
+.env
+secrets/
+*.pem
+*.key
+*.p12
+
+# IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db

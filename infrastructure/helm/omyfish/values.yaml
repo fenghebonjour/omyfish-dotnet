@@ -1,0 +1,122 @@
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+replicaCount:
+  apiGateway: 2
+  identityService: 2
+  speciesService: 2
+  observationService: 2
+  notificationService: 1
+  aiService: 1
+
+image:
+  apiGateway:
+    repository: omyfish/api-gateway-dotnet
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  speciesService:
+    repository: omyfish/species-service-dotnet
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  observationService:
+    repository: omyfish/observation-service-dotnet
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  aiService:
+    repository: omyfish/ai-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+resources:
+  apiGateway:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  speciesService:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  observationService:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  aiService:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+
+autoscaling:
+  enabled: true
+  speciesService:
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+  observationService:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+postgresql:
+  enabled: true
+  auth:
+    database: omyfish
+    username: omyfish
+    password: changeme-in-prod
+  primary:
+    persistence:
+      size: 20Gi
+
+rabbitmq:
+  enabled: true
+  auth:
+    username: omyfish
+    password: changeme-in-prod
+  replicaCount: 3
+  persistence:
+    size: 8Gi
+
+minio:
+  enabled: true
+  auth:
+    rootUser: omyfish
+    rootPassword: changeme-in-prod
+  persistence:
+    size: 50Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.omyfish.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: omyfish-dotnet-tls
+      hosts:
+        - api.omyfish.io
+
+jwt:
+  secret: "CHANGE_ME_IN_PRODUCTION_USE_K8S_SECRET"
+  expirationMinutes: 1440
+
+observability:
+  otelEndpoint: "http://otel-collector:4317"
+  prometheusEnabled: true
+  jaegerEnabled: true
