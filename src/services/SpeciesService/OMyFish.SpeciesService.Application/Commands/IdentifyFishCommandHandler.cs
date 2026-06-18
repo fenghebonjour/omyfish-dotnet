@@ -1,4 +1,5 @@
 using OMyFish.Shared.BuildingBlocks.CQRS;
+using OMyFish.Shared.BuildingBlocks.Messaging;
 using OMyFish.SpeciesService.Application.Interfaces;
 using OMyFish.SpeciesService.Domain.Entities;
 using OMyFish.SpeciesService.Domain.ValueObjects;

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OMyFish.SpeciesService.Application\OMyFish.SpeciesService.Application.csproj" />
+    <ProjectReference Include="..\OMyFish.SpeciesService.Domain\OMyFish.SpeciesService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.BuildingBlocks\OMyFish.Shared.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.Contracts\OMyFish.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>

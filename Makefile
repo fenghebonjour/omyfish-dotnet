@@ -20,18 +20,18 @@ ps:
 # ─── Build ────────────────────────────────────────────────────────────────────
 
 build:
-	dotnet build omyfish-dotnet.sln
+	dotnet build omyfish-dotnet.slnx
 
 build-docker:
 	docker compose build
 
 release:
-	dotnet publish omyfish-dotnet.sln -c Release
+	dotnet publish omyfish-dotnet.slnx -c Release
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
 test:
-	dotnet test omyfish-dotnet.sln --logger "console;verbosity=minimal"
+	dotnet test omyfish-dotnet.slnx --logger "console;verbosity=minimal"
 
 test-service:
 	dotnet test src/services/$(service) --logger "console;verbosity=minimal"
@@ -49,7 +49,7 @@ migrate:
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
 fmt:
-	dotnet format omyfish-dotnet.sln
+	dotnet format omyfish-dotnet.slnx
 
 clean:
 	dotnet clean

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite" Version="9.0.4" />
+    <PackageReference Include="Minio" Version="6.0.3" />
+    <PackageReference Include="MetadataExtractor" Version="2.8.1" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.7" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OMyFish.ObservationService.Application\OMyFish.ObservationService.Application.csproj" />
+    <ProjectReference Include="..\OMyFish.ObservationService.Domain\OMyFish.ObservationService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.BuildingBlocks\OMyFish.Shared.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.Contracts\OMyFish.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>

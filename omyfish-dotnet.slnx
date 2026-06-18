@@ -1,0 +1,31 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/services/" />
+  <Folder Name="/src/services/ApiGateway/">
+    <Project Path="src/services/ApiGateway/OMyFish.ApiGateway/OMyFish.ApiGateway.csproj" />
+  </Folder>
+  <Folder Name="/src/services/IdentityService/">
+    <Project Path="src/services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj" />
+    <Project Path="src/services/IdentityService/OMyFish.IdentityService.Domain/OMyFish.IdentityService.Domain.csproj" />
+    <Project Path="src/services/IdentityService/OMyFish.IdentityService.Infrastructure/OMyFish.IdentityService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/services/NotificationService/">
+    <Project Path="src/services/NotificationService/OMyFish.NotificationService/OMyFish.NotificationService.csproj" />
+  </Folder>
+  <Folder Name="/src/services/ObservationService/">
+    <Project Path="src/services/ObservationService/OMyFish.ObservationService.Api/OMyFish.ObservationService.Api.csproj" />
+    <Project Path="src/services/ObservationService/OMyFish.ObservationService.Application/OMyFish.ObservationService.Application.csproj" />
+    <Project Path="src/services/ObservationService/OMyFish.ObservationService.Domain/OMyFish.ObservationService.Domain.csproj" />
+    <Project Path="src/services/ObservationService/OMyFish.ObservationService.Infrastructure/OMyFish.ObservationService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/services/SpeciesService/">
+    <Project Path="src/services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj" />
+    <Project Path="src/services/SpeciesService/OMyFish.SpeciesService.Application/OMyFish.SpeciesService.Application.csproj" />
+    <Project Path="src/services/SpeciesService/OMyFish.SpeciesService.Domain/OMyFish.SpeciesService.Domain.csproj" />
+    <Project Path="src/services/SpeciesService/OMyFish.SpeciesService.Infrastructure/OMyFish.SpeciesService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/shared/">
+    <Project Path="src/shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj" />
+    <Project Path="src/shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj" />
+  </Folder>
+</Solution>
