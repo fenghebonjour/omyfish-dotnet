@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "OMyFish.SpeciesService.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:56141;http://localhost:56144"
+    }
+  }
+}
