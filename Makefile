@@ -44,9 +44,9 @@ migrate:
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/SpeciesService/001_initial_species_schema.sql
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
-	  -f migrations/ObservationService/002_add_postgis_extension.sql
-	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/ObservationService/001_initial_observation_schema.sql
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/ObservationService/002_add_postgis_extension.sql
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -64,3 +64,14 @@ minio-create-buckets:
 	docker compose exec minio mc alias set local http://localhost:9000 omyfish omyfish_dev
 	docker compose exec minio mc mb local/omyfish-images --ignore-existing
 	docker compose exec minio mc mb local/omyfish-exports --ignore-existing
+
+# ─── Frontend ──────────────────────────────────────────────────────────────────
+
+frontend-dev:
+	cd frontend/omyfish-web && npm run dev
+
+frontend-install:
+	cd frontend/omyfish-web && npm install
+
+frontend-build:
+	cd frontend/omyfish-web && npm run build

@@ -1,4 +1,9 @@
 using System.Text;
+using System.Text.Json;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Prometheus;
+using Serilog;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using OMyFish.SpeciesService.Application.Commands;
 using OMyFish.SpeciesService.Application.Interfaces;
 using OMyFish.SpeciesService.Api.Endpoints;
+using OMyFish.SpeciesService.Domain.Entities;
 using OMyFish.SpeciesService.Infrastructure.ExternalServices;
 using OMyFish.SpeciesService.Infrastructure.Messaging;
 using OMyFish.SpeciesService.Infrastructure.Persistence;
@@ -13,6 +19,10 @@ using OMyFish.SpeciesService.Infrastructure.Repositories;
 using OMyFish.Shared.BuildingBlocks.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog((ctx, cfg) => cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] species | {Message:lj}{NewLine}{Exception}"));
 
 // Database
 builder.Services.AddDbContext<SpeciesDbContext>(opts =>
@@ -71,6 +81,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("species-service"))
+        .AddAspNetCoreInstrumentation(opts => opts.RecordException = true)
+        .AddHttpClientInstrumentation()
+        .AddOtlpExporter(opts => opts.Endpoint = new Uri(
+            builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? "http://jaeger:4317")));
+
 var app = builder.Build();
 
 // Ensure schema exists (fault-tolerant for cold starts)
@@ -84,10 +102,55 @@ using (var scope = app.Services.CreateScope())
     catch { /* DB may not be ready yet; migrations handle schema */ }
 }
 
+// Seed species from fish_info.json if available
+var metadataPath = app.Configuration["Seeding__MetadataPath"] ?? app.Configuration["Seeding:MetadataPath"];
+if (!string.IsNullOrEmpty(metadataPath) && File.Exists(metadataPath))
+{
+    using var scope = app.Services.CreateScope();
+    var repo = scope.ServiceProvider.GetRequiredService<ISpeciesRepository>();
+    try
+    {
+        var json = await File.ReadAllTextAsync(metadataPath);
+        var entries = JsonSerializer.Deserialize<JsonElement[]>(json);
+        if (entries is not null)
+        {
+            foreach (var entry in entries)
+            {
+                var scientificName = entry.TryGetProperty("scientific_name", out var sn) ? sn.GetString() : null;
+                var commonName = entry.TryGetProperty("species", out var sp) ? sp.GetString()?.Replace("_", " ") : null;
+                var habitat = entry.TryGetProperty("habitat", out var h) ? h.GetString() : "";
+                var status = entry.TryGetProperty("conservation_status", out var cs) ? cs.GetString() : "Unknown";
+                var description = entry.TryGetProperty("description", out var d) ? d.GetString() : "";
+
+                if (string.IsNullOrEmpty(scientificName) || string.IsNullOrEmpty(commonName)) continue;
+
+                var species = Species.Create(
+                    scientificName,
+                    commonName,
+                    "Unknown",
+                    status ?? "Unknown",
+                    habitat ?? "",
+                    habitat ?? "",
+                    description ?? "",
+                    false);
+
+                await repo.AddIfNotExistsAsync(species);
+            }
+            app.Logger.LogInformation("Species seeding complete from {Path}", metadataPath);
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Species seeding failed — continuing without seed data");
+    }
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseHttpMetrics();
 
 app.MapGet("/health", () => "ok");
+app.MapMetrics("/metrics");
 app.MapSpeciesEndpoints();
 app.MapIdentificationEndpoints();
 

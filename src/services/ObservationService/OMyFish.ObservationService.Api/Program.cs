@@ -1,5 +1,9 @@
 using System.Text;
 using MassTransit;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Prometheus;
+using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -14,11 +18,14 @@ using OMyFish.ObservationService.Infrastructure.Storage;
 using OMyFish.Shared.BuildingBlocks.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog((ctx, cfg) => cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] observations | {Message:lj}{NewLine}{Exception}"));
 
 // Database (PostGIS)
 builder.Services.AddDbContext<ObservationDbContext>(opts =>
-    opts.UseNpgsql(builder.Configuration.GetConnectionString("Default"),
-        o => o.UseNetTopologySuite()));
+    opts.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
 // Repositories
 builder.Services.AddScoped<IObservationRepository, ObservationRepository>();
@@ -81,6 +88,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("observation-service"))
+        .AddAspNetCoreInstrumentation(opts => opts.RecordException = true)
+        .AddHttpClientInstrumentation()
+        .AddOtlpExporter(opts => opts.Endpoint = new Uri(
+            builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? "http://jaeger:4317")));
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -95,8 +110,10 @@ using (var scope = app.Services.CreateScope())
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseHttpMetrics();
 
 app.MapGet("/health", () => "ok");
+app.MapMetrics("/metrics");
 app.MapObservationEndpoints();
 
 app.Run();

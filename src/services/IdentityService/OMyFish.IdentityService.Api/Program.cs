@@ -1,6 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Prometheus;
+using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -10,6 +14,10 @@ using OMyFish.IdentityService.Infrastructure.Persistence;
 using OMyFish.IdentityService.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog((ctx, cfg) => cfg
+    .ReadFrom.Configuration(ctx.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] identity | {Message:lj}{NewLine}{Exception}"));
 
 // ── Database ──────────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<IdentityDbContext>(opts =>
@@ -33,6 +41,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("identity-service"))
+        .AddAspNetCoreInstrumentation(opts => opts.RecordException = true)
+        .AddHttpClientInstrumentation()
+        .AddOtlpExporter(opts => opts.Endpoint = new Uri(
+            builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? "http://jaeger:4317")));
+
 var app = builder.Build();
 
 // ── Auto-migrate on startup ───────────────────────────────────────────────────
@@ -51,10 +67,12 @@ using (var scope = app.Services.CreateScope())
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseHttpMetrics();
 
 // ── Endpoints ─────────────────────────────────────────────────────────────────
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "identity" }));
+app.MapMetrics("/metrics");
 
 app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IUserRepository repo) =>
 {
@@ -80,8 +98,40 @@ app.MapPost("/api/v1/auth/login", async (LoginRequest req, IUserRepository repo)
     if (!user.IsActive)
         return Results.Forbid();
 
-    var token = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
-    return Results.Ok(new TokenResponse(token, user.Id, user.Email, user.Role));
+    var accessToken = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
+    var refreshToken = CreateRefreshJwt(user, signingKey);
+    return Results.Ok(new TokenResponse(accessToken, refreshToken, user.Id, user.Email, user.Role));
+});
+
+app.MapPost("/api/v1/auth/refresh", async (RefreshRequest req, IUserRepository repo) =>
+{
+    var handler = new JwtSecurityTokenHandler();
+    ClaimsPrincipal principal;
+    try
+    {
+        principal = handler.ValidateToken(req.RefreshToken, new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = signingKey,
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+        }, out _);
+    }
+    catch { return Results.Unauthorized(); }
+
+    var typeClaim = principal.FindFirstValue("token_type");
+    if (typeClaim != "refresh") return Results.Unauthorized();
+
+    var idStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!Guid.TryParse(idStr, out var userId)) return Results.Unauthorized();
+
+    var user = await repo.FindByIdAsync(userId);
+    if (user is null || !user.IsActive) return Results.Unauthorized();
+
+    var accessToken = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
+    var refreshToken = CreateRefreshJwt(user, signingKey);
+    return Results.Ok(new TokenResponse(accessToken, refreshToken, user.Id, user.Email, user.Role));
 });
 
 app.MapGet("/api/v1/auth/me", async (ClaimsPrincipal principal, IUserRepository repo) =>
@@ -103,6 +153,7 @@ static string CreateJwt(User user, SymmetricSecurityKey key, TimeSpan lifetime)
         new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
         new Claim(ClaimTypes.Email, user.Email),
         new Claim(ClaimTypes.Role, user.Role),
+        new Claim("token_type", "access"),
     };
     var token = new JwtSecurityToken(
         claims: claims,
@@ -111,8 +162,23 @@ static string CreateJwt(User user, SymmetricSecurityKey key, TimeSpan lifetime)
     return new JwtSecurityTokenHandler().WriteToken(token);
 }
 
+static string CreateRefreshJwt(User user, SymmetricSecurityKey key)
+{
+    var claims = new[]
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim("token_type", "refresh"),
+    };
+    var token = new JwtSecurityToken(
+        claims: claims,
+        expires: DateTime.UtcNow.AddDays(30),
+        signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+
 // ── Request/Response records ──────────────────────────────────────────────────
 record RegisterRequest(string Email, string Password, string? DisplayName);
 record LoginRequest(string Email, string Password);
-record TokenResponse(string AccessToken, Guid UserId, string Email, string Role);
+record RefreshRequest(string RefreshToken);
+record TokenResponse(string AccessToken, string RefreshToken, Guid UserId, string Email, string Role);
 record UserDto(Guid Id, string Email, string? DisplayName, string Role);

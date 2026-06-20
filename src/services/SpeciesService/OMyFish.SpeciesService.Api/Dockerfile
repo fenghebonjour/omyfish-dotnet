@@ -13,7 +13,7 @@ RUN dotnet restore services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.Sp
 COPY . .
 
 RUN dotnet publish services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj \
-    -c Release -o /out --no-restore
+    -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

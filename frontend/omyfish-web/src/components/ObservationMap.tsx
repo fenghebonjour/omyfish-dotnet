@@ -13,32 +13,76 @@ interface ObservationMapProps {
   height?: string;
 }
 
-export function ObservationMap({ markers, height = "400px" }: ObservationMapProps) {
+export function ObservationMap({ markers, height = "300px" }: ObservationMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<unknown>(null);
 
   useEffect(() => {
-    if (!mapRef.current || markers.length === 0) return;
+    if (!mapRef.current || mapInstanceRef.current) return;
 
-    const center = markers[0];
-    const el = mapRef.current;
+    // Dynamically import Leaflet to avoid SSR issues
+    import("leaflet").then((L) => {
+      // Leaflet default icon fix for bundlers
+      // @ts-expect-error _getIconUrl is internal
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      });
 
-    // Static placeholder — replace with Leaflet or MapLibre when tile provider is configured
-    el.innerHTML = `
-      <div style="
-        display:flex; align-items:center; justify-content:center;
-        height:100%; background:#e8f4fd; border-radius:8px;
-        color:#2563eb; font-size:14px; flex-direction:column; gap:8px;
-      ">
-        <span style="font-size:24px">🗺️</span>
-        <span>${markers.length} observation${markers.length !== 1 ? "s" : ""}</span>
-        <span style="color:#6b7280; font-size:12px">
-          Center: ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}
-        </span>
-      </div>
-    `;
+      const center: [number, number] = markers.length > 0
+        ? [markers[0].lat, markers[0].lng]
+        : [20, 0];
+      const zoom = markers.length > 0 ? 5 : 2;
+
+      const map = L.map(mapRef.current!).setView(center, zoom);
+      mapInstanceRef.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 18,
+      }).addTo(map);
+
+      markers.forEach((m) => {
+        L.marker([m.lat, m.lng]).addTo(map).bindPopup(m.label);
+      });
+    });
+
+    return () => {
+      if (mapInstanceRef.current) {
+        (mapInstanceRef.current as { remove: () => void }).remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update markers when they change
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    import("leaflet").then((L) => {
+      const map = mapInstanceRef.current as ReturnType<typeof L.map>;
+      map.eachLayer((layer) => {
+        if (layer instanceof L.Marker) map.removeLayer(layer);
+      });
+      markers.forEach((m) => {
+        L.marker([m.lat, m.lng]).addTo(map).bindPopup(m.label);
+      });
+      if (markers.length > 0) {
+        map.setView([markers[0].lat, markers[0].lng], 5);
+      }
+    });
   }, [markers]);
 
-  if (markers.length === 0) return null;
-
-  return <div ref={mapRef} style={{ height, borderRadius: 8, overflow: "hidden" }} />;
+  return (
+    <>
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossOrigin=""
+      />
+      <div ref={mapRef} style={{ height, borderRadius: 8, overflow: "hidden", zIndex: 0 }} />
+    </>
+  );
 }

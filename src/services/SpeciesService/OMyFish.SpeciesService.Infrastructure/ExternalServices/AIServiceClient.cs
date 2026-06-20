@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 using OMyFish.SpeciesService.Application.Interfaces;
 
 namespace OMyFish.SpeciesService.Infrastructure.ExternalServices;
@@ -29,11 +30,11 @@ public class AIServiceClient : IAIServiceClient
     }
 
     private sealed record AiServiceResponse(
-        List<AiPrediction> Predictions,
-        bool Uncertain);
+        [property: JsonPropertyName("predictions")] List<AiPrediction> Predictions,
+        [property: JsonPropertyName("uncertain")] bool Uncertain);
 
     private sealed record AiPrediction(
-        string ScientificName,
-        string CommonName,
-        double Confidence);
+        [property: JsonPropertyName("scientific_name")] string ScientificName,
+        [property: JsonPropertyName("common_name")] string CommonName,
+        [property: JsonPropertyName("confidence")] double Confidence);
 }

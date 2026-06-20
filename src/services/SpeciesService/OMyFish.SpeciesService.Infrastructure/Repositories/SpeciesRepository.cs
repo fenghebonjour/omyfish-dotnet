@@ -23,4 +23,13 @@ public class SpeciesRepository : ISpeciesRepository
         _db.Species.Add(species);
         await _db.SaveChangesAsync(ct);
     }
+
+    public async Task AddIfNotExistsAsync(Species species, CancellationToken ct = default)
+    {
+        var exists = await _db.Species.AnyAsync(
+            s => s.ScientificName == species.ScientificName, ct);
+        if (exists) return;
+        _db.Species.Add(species);
+        await _db.SaveChangesAsync(ct);
+    }
 }

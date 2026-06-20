@@ -1,1 +1,92 @@
-// placeholder
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: species-service
+  namespace: omyfish
+  labels:
+    app: species-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: species-service
+  template:
+    metadata:
+      labels:
+        app: species-service
+    spec:
+      containers:
+        - name: species-service
+          image: omyfish/species-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: db-connection-string
+            - name: RabbitMq__Host
+              value: "rabbitmq"
+            - name: RabbitMq__Username
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-username
+            - name: RabbitMq__Password
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-password
+            - name: AIService__BaseUrl
+              value: "http://ai-service:8000"
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: jwt-secret
+            - name: Seeding__MetadataPath
+              value: "/metadata/fish_info.json"
+          volumeMounts:
+            - name: fish-metadata
+              mountPath: /metadata
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: fish-metadata
+          configMap:
+            name: fish-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: species-service
+  namespace: omyfish
+spec:
+  selector:
+    app: species-service
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

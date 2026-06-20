@@ -32,7 +32,17 @@ export interface ObservationDto {
 
 export interface TokenResponse {
   accessToken: string;
-  expiresIn: number;
+  refreshToken: string;
+  userId: string;
+  email: string;
+  role: string;
+}
+
+export interface UserDto {
+  id: string;
+  email: string;
+  displayName?: string;
+  role: string;
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
@@ -58,11 +68,21 @@ export const api = {
       }),
 
     register: (email: string, password: string, displayName?: string) =>
-      apiFetch<TokenResponse>("/api/v1/auth/register", {
+      apiFetch<UserDto>("/api/v1/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, displayName }),
       }),
+
+    refresh: (refreshToken: string) =>
+      apiFetch<TokenResponse>("/api/v1/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      }),
+
+    me: (token: string) =>
+      apiFetch<UserDto>("/api/v1/auth/me", {}, token),
   },
 
   species: {
@@ -90,5 +110,14 @@ export const api = {
 
     getById: (id: string, token: string) =>
       apiFetch<ObservationDto>(`/api/v1/observations/${id}`, {}, token),
+
+    delete: (id: string, token: string) =>
+      fetch(`${API_BASE}/api/v1/observations/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => { if (!r.ok && r.status !== 204) throw new Error(`${r.status}`); }),
+
+    getGeoJson: () =>
+      apiFetch<object>("/api/v1/observations/geojson"),
   },
 };

@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "OMyFish.ApiGateway": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:56139;http://localhost:56140"
+    }
+  }
+}

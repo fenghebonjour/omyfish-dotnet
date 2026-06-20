@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: omyfish
+  labels:
+    app: ai-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+    spec:
+      containers:
+        - name: ai-service
+          image: omyfish/ai-service:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_PATH
+              value: "/checkpoints/best.pt"
+            - name: CLASSES_PATH
+              value: "/checkpoints/classes.json"
+            - name: METADATA_PATH
+              value: "/metadata/fish_info.json"
+          volumeMounts:
+            - name: model-checkpoints
+              mountPath: /checkpoints
+              readOnly: true
+            - name: fish-metadata
+              mountPath: /metadata
+              readOnly: true
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: 1000m
+              memory: 4Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: model-checkpoints
+          persistentVolumeClaim:
+            claimName: ai-model-pvc
+        - name: fish-metadata
+          configMap:
+            name: fish-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: omyfish
+spec:
+  selector:
+    app: ai-service
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

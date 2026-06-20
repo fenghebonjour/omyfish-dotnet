@@ -30,12 +30,13 @@ def _build_model(config: dict):
 
     backbone = timm.create_model(arch, pretrained=False, num_classes=0)
     embed_dim = backbone.num_features
+    dropout = config.get("model", {}).get("dropout", 0.3)
 
     head = nn.Sequential(
+        nn.Dropout(dropout),
         nn.Linear(embed_dim, 512),
-        nn.BatchNorm1d(512),
         nn.ReLU(),
-        nn.Dropout(0.3),
+        nn.Dropout(dropout),
         nn.Linear(512, num_classes),
     )
 

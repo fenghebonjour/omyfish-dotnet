@@ -1,7 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using NetTopologySuite.Geometries;
 using OMyFish.ObservationService.Domain.Entities;
-using OMyFish.ObservationService.Domain.ValueObjects;
 
 namespace OMyFish.ObservationService.Infrastructure.Persistence;
 
@@ -17,27 +15,19 @@ public class ObservationDbContext : DbContext
         {
             o.ToTable("observations");
             o.HasKey(x => x.Id);
-            o.Property(x => x.UserId);
-            o.Property(x => x.SpeciesName).HasMaxLength(255).IsRequired();
-            o.Property(x => x.ScientificName).HasMaxLength(255);
-            o.Property(x => x.TopConfidence);
-            o.Property(x => x.ImageStorageKey).HasMaxLength(512).IsRequired();
-            o.Property(x => x.Notes).HasMaxLength(2000);
-            o.Property(x => x.ObservedAt);
-            o.Property(x => x.CreatedAt).HasDefaultValueSql("NOW()");
-            o.Ignore(x => x.DomainEvents);
-
-            // Store GPS as PostGIS Point
-            o.Property<Point?>("location_geom")
-                .HasColumnName("location_geom")
-                .HasColumnType("geometry(Point,4326)");
-
-            // Map GpsCoordinates value object via shadow property
+            o.Property(x => x.Id).HasColumnName("id");
+            o.Property(x => x.UserId).HasColumnName("user_id");
+            o.Property(x => x.SpeciesName).HasColumnName("species_name").HasMaxLength(255).IsRequired();
+            o.Property(x => x.ScientificName).HasColumnName("scientific_name").HasMaxLength(255);
+            o.Property(x => x.TopConfidence).HasColumnName("top_confidence");
+            o.Property(x => x.ImageStorageKey).HasColumnName("image_storage_key").HasMaxLength(512).IsRequired();
+            o.Property(x => x.Latitude).HasColumnName("latitude");
+            o.Property(x => x.Longitude).HasColumnName("longitude");
             o.Ignore(x => x.Location);
-
-            // Store ExifMetadata as JSON columns
-            o.Property<DateTime?>("exif_captured_at").HasColumnName("exif_captured_at");
-            o.Property<string?>("exif_camera_model").HasMaxLength(255).HasColumnName("exif_camera_model");
+            o.Property(x => x.Notes).HasColumnName("notes").HasMaxLength(2000);
+            o.Property(x => x.ObservedAt).HasColumnName("observed_at");
+            o.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            o.Ignore(x => x.DomainEvents);
             o.Ignore(x => x.ExifMetadata);
         });
     }

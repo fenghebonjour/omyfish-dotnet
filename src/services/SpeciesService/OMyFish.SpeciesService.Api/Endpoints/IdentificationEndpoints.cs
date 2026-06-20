@@ -7,9 +7,7 @@ public static class IdentificationEndpoints
 {
     public static void MapIdentificationEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/v1/species").RequireAuthorization();
-
-        group.MapPost("/identify", async (
+        app.MapPost("/api/v1/species/identify", async (
             IFormFile image,
             IMediator mediator,
             HttpContext ctx,
@@ -24,14 +22,12 @@ public static class IdentificationEndpoints
             var imageBase64 = Convert.ToBase64String(ms.ToArray());
 
             var userId = GetUserIdFromClaims(ctx);
-            if (userId == Guid.Empty)
-                return Results.Unauthorized();
-
             var command = new IdentifyFishCommand(imageBase64, topK, userId);
             var result = await mediator.Send(command, ct);
 
             return Results.Ok(result);
         })
+        .AllowAnonymous()
         .DisableAntiforgery()
         .Accepts<IFormFile>("multipart/form-data")
         .WithName("IdentifyFish");

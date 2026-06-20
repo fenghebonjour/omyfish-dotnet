@@ -13,7 +13,11 @@ public sealed class Observation : AggregateRoot<Guid>
     public string? ScientificName { get; private set; }
     public double TopConfidence { get; private set; }
     public string ImageStorageKey { get; private set; } = default!;
-    public GpsCoordinates? Location { get; private set; }
+    public double? Latitude { get; private set; }
+    public double? Longitude { get; private set; }
+    public GpsCoordinates? Location => Latitude.HasValue && Longitude.HasValue
+        ? GpsCoordinates.Create(Latitude.Value, Longitude.Value)
+        : null;
     public ExifMetadata? ExifMetadata { get; private set; }
     public string? Notes { get; private set; }
     public DateTime ObservedAt { get; private set; }
@@ -36,7 +40,8 @@ public sealed class Observation : AggregateRoot<Guid>
             ScientificName = scientificName,
             TopConfidence = topConfidence,
             ImageStorageKey = imageStorageKey,
-            Location = location,
+            Latitude = location?.Latitude,
+            Longitude = location?.Longitude,
             ExifMetadata = exifMetadata,
             Notes = notes,
             ObservedAt = exifMetadata?.CapturedAt ?? DateTime.UtcNow,

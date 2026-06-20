@@ -13,7 +13,7 @@ RUN dotnet restore services/ObservationService/OMyFish.ObservationService.Api/OM
 COPY . .
 
 RUN dotnet publish services/ObservationService/OMyFish.ObservationService.Api/OMyFish.ObservationService.Api.csproj \
-    -c Release -o /out --no-restore
+    -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

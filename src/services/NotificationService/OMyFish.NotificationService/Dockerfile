@@ -9,7 +9,7 @@ RUN dotnet restore services/NotificationService/OMyFish.NotificationService/OMyF
 COPY . .
 
 RUN dotnet publish services/NotificationService/OMyFish.NotificationService/OMyFish.NotificationService.csproj \
-    -c Release -o /out --no-restore
+    -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app

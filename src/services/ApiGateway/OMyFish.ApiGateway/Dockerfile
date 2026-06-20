@@ -8,7 +8,7 @@ RUN dotnet restore services/ApiGateway/OMyFish.ApiGateway/OMyFish.ApiGateway.csp
 COPY . .
 
 RUN dotnet publish services/ApiGateway/OMyFish.ApiGateway/OMyFish.ApiGateway.csproj \
-    -c Release -o /out --no-restore
+    -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

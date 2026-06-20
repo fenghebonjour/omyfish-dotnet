@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using MediatR;
+using Microsoft.AspNetCore.Mvc;
 using OMyFish.ObservationService.Application.Commands;
 using OMyFish.ObservationService.Application.Queries;
 
@@ -14,12 +16,12 @@ public static class ObservationEndpoints
             IFormFile image,
             IMediator mediator,
             HttpContext ctx,
-            string speciesName,
-            string? scientificName = null,
-            double topConfidence = 0,
-            double? latitude = null,
-            double? longitude = null,
-            string? notes = null,
+            [FromForm] string speciesName,
+            [FromForm] string? scientificName = null,
+            [FromForm] double topConfidence = 0,
+            [FromForm] double? latitude = null,
+            [FromForm] double? longitude = null,
+            [FromForm] string? notes = null,
             CancellationToken ct = default) =>
         {
             var userId = GetUserId(ctx);
@@ -60,12 +62,35 @@ public static class ObservationEndpoints
             return result is null ? Results.NotFound() : Results.Ok(result);
         })
         .WithName("GetObservationById");
+
+        group.MapDelete("/{id:guid}", async (
+            Guid id,
+            IMediator mediator,
+            HttpContext ctx,
+            CancellationToken ct = default) =>
+        {
+            var userId = GetUserId(ctx);
+            if (userId == Guid.Empty) return Results.Unauthorized();
+            var deleted = await mediator.Send(new DeleteObservationCommand(id, userId), ct);
+            return deleted ? Results.NoContent() : Results.NotFound();
+        })
+        .WithName("DeleteObservation");
+
+        // Public GeoJSON endpoint for map display
+        app.MapGet("/api/v1/observations/geojson", async (
+            IMediator mediator,
+            CancellationToken ct = default) =>
+        {
+            var result = await mediator.Send(new GetGeoJsonQuery(), ct);
+            return Results.Ok(result);
+        })
+        .WithName("GetObservationsGeoJson");
     }
 
     private static Guid GetUserId(HttpContext ctx)
     {
         var sub = ctx.User.FindFirst("sub")?.Value
-               ?? ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+               ?? ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         return Guid.TryParse(sub, out var id) ? id : Guid.Empty;
     }
 }

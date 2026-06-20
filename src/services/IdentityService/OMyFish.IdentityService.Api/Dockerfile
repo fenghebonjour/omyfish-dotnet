@@ -12,7 +12,7 @@ RUN dotnet restore services/IdentityService/OMyFish.IdentityService.Api/OMyFish.
 COPY . .
 
 RUN dotnet publish services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj \
-    -c Release -o /out --no-restore
+    -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

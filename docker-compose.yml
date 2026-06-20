@@ -77,14 +77,17 @@ services:
       - "3001:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on: [prometheus]
     networks: [omyfish-net]
 
   jaeger:
     image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
     ports:
       - "16686:16686"
-      - "14250:14250"
+      - "4317:4317"
     networks: [omyfish-net]
 
   # ─── AI Service (Python — preserved from omyfish) ─────────────────────────
@@ -100,8 +103,8 @@ services:
       CLASSES_PATH: /checkpoints/classes.json
       METADATA_PATH: /metadata/fish_info.json
     volumes:
-      - ../../omyfish/checkpoints:/checkpoints:ro
-      - ../../omyfish/data/metadata:/metadata:ro
+      - ../omyfish/checkpoints:/checkpoints:ro
+      - ../omyfish/data/metadata:/metadata:ro
     networks: [omyfish-net]
 
   # ─── .NET Microservices ────────────────────────────────────────────────────
@@ -115,7 +118,7 @@ services:
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
       Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:14250"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
       postgres: { condition: service_healthy }
     networks: [omyfish-net]
@@ -128,11 +131,15 @@ services:
       - "8082:8080"
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
       RabbitMq__Password: omyfish_dev
       AIService__BaseUrl: "http://ai-service:8000"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:14250"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      Seeding__MetadataPath: "/metadata/fish_info.json"
+    volumes:
+      - ../omyfish/data/metadata:/metadata:ro
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -146,13 +153,14 @@ services:
       - "8083:8080"
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
       RabbitMq__Password: omyfish_dev
-      MinIO__Endpoint: "http://minio:9000"
+      MinIO__Endpoint: "minio:9000"
       MinIO__AccessKey: omyfish
       MinIO__SecretKey: omyfish_dev
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:14250"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -168,6 +176,7 @@ services:
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
       RabbitMq__Password: omyfish_dev
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
       rabbitmq: { condition: service_healthy }
     networks: [omyfish-net]
@@ -182,6 +191,7 @@ services:
       Services__Identity: "http://identity-service:8080"
       Services__Species: "http://species-service:8080"
       Services__Observation: "http://observation-service:8080"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
       - identity-service
       - species-service

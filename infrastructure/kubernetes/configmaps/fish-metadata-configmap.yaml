@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fish-metadata
+  namespace: omyfish
+data:
+  # Mount fish_info.json content here before applying.
+  # Usage: kubectl create configmap fish-metadata \
+  #   --from-file=fish_info.json=../../omyfish/data/metadata/fish_info.json \
+  #   -n omyfish --dry-run=client -o yaml | kubectl apply -f -
+  fish_info.json: |
+    []

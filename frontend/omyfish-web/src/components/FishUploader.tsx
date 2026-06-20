@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface PredictionDto {
   speciesName: string;
@@ -19,18 +20,24 @@ interface IdentifyFishResult {
 }
 
 export function FishUploader() {
+  const { token, isAuthenticated } = useAuth();
   const [preview, setPreview] = useState<string | null>(null);
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<IdentifyFishResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
+    setCurrentFile(file);
     setPreview(URL.createObjectURL(file));
     setResult(null);
     setError(null);
+    setSaved(false);
     setLoading(true);
 
     try {
@@ -38,9 +45,12 @@ export function FishUploader() {
       formData.append("image", file);
       formData.append("topK", "5");
 
+      const headers: HeadersInit = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/v1/species/identify`,
-        { method: "POST", body: formData }
+        { method: "POST", body: formData, headers }
       );
 
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -51,7 +61,46 @@ export function FishUploader() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
+
+  const handleSave = async () => {
+    if (!result || !currentFile || !token) return;
+    setSaving(true);
+    try {
+      const top = result.predictions[0];
+      const formData = new FormData();
+      formData.append("image", currentFile);
+      formData.append("speciesName", top.speciesName);
+      formData.append("scientificName", top.scientificName ?? "");
+      formData.append("topConfidence", String(top.confidence));
+
+      // Try to capture GPS coordinates
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+        );
+        formData.append("latitude", String(pos.coords.latitude));
+        formData.append("longitude", String(pos.coords.longitude));
+      } catch {
+        // Location not available — save without coordinates
+      }
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/observations`,
+        {
+          method: "POST",
+          body: formData,
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaved(true);
+    } catch (err) {
+      alert("Save failed: " + (err instanceof Error ? err.message : err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -85,7 +134,7 @@ export function FishUploader() {
 
       {loading && (
         <div className="text-center text-blue-600 font-medium animate-pulse">
-          Identifying species...
+          Identifying species…
         </div>
       )}
 
@@ -105,6 +154,26 @@ export function FishUploader() {
           {result.predictions.map((p) => (
             <PredictionCard key={p.rank} prediction={p} />
           ))}
+
+          {isAuthenticated && !saved && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="mt-2 w-full py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              {saving ? "Saving…" : "Save to My Observations"}
+            </button>
+          )}
+          {saved && (
+            <div className="text-center text-sm text-green-600 font-medium">
+              Saved to your observations
+            </div>
+          )}
+          {!isAuthenticated && (
+            <p className="text-center text-sm text-gray-400">
+              <a href="/login" className="text-blue-600 hover:underline">Log in</a> to save this observation
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -149,6 +218,10 @@ function ConservationBadge({ status }: { status: string }) {
     CR: "bg-red-100 text-red-800",
     EW: "bg-purple-100 text-purple-800",
     EX: "bg-gray-200 text-gray-700",
+    "Least Concern": "bg-green-100 text-green-800",
+    Vulnerable: "bg-yellow-100 text-yellow-800",
+    Endangered: "bg-orange-100 text-orange-800",
+    "Critically Endangered": "bg-red-100 text-red-800",
   };
   return (
     <span
@@ -156,7 +229,7 @@ function ConservationBadge({ status }: { status: string }) {
         colors[status] ?? "bg-gray-100 text-gray-600"
       }`}
     >
-      IUCN: {status}
+      {status.length <= 4 ? `IUCN: ${status}` : status}
     </span>
   );
 }
