@@ -62,15 +62,38 @@ export function FishUploader() {
       const data: IdentifyFishResult = await res.json();
       setResult(data);
 
-      // Extract GPS from image EXIF; silently ignore if unavailable
+      const fallbackToGeolocation = () => {
+        navigator.geolocation?.getCurrentPosition(
+          (pos) => {
+            setLat(String(pos.coords.latitude));
+            setLng(String(pos.coords.longitude));
+          },
+          () => {}
+        );
+      };
+
       try {
-        const gps = await exifr.gps(file);
-        if (gps?.latitude != null && gps?.longitude != null) {
-          setLat(String(gps.latitude));
-          setLng(String(gps.longitude));
+        const parsed = await exifr.parse(file, {
+          gps: true,
+          tiff: true,
+          xmp: false,
+          iptc: false,
+          icc: false,
+          jfif: false,
+          ihdr: false,
+          translateValues: true,
+          reviveValues: true,
+        });
+        const exifLat = parsed?.latitude;
+        const exifLng = parsed?.longitude;
+        if (exifLat != null && exifLng != null && !isNaN(exifLat) && !isNaN(exifLng)) {
+          setLat(String(exifLat));
+          setLng(String(exifLng));
+        } else {
+          fallbackToGeolocation();
         }
       } catch {
-        // No EXIF GPS — user can enter manually
+        fallbackToGeolocation();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Identification failed");

@@ -6,11 +6,39 @@ interface MapMarker {
   lat: number;
   lng: number;
   label: string;
+  imageUrl?: string;
+  date?: string;
 }
 
 interface ObservationMapProps {
   markers: MapMarker[];
   height?: string;
+}
+
+function buildPopup(m: MapMarker): HTMLElement {
+  const el = document.createElement("div");
+  el.style.cssText = "text-align:center;min-width:160px";
+
+  if (m.imageUrl) {
+    const img = document.createElement("img");
+    img.src = m.imageUrl;
+    img.style.cssText = "width:160px;height:110px;object-fit:cover;border-radius:6px;display:block;margin-bottom:6px";
+    el.appendChild(img);
+  }
+
+  const name = document.createElement("div");
+  name.style.cssText = "font-weight:600;font-size:13px;color:#111";
+  name.textContent = m.label;
+  el.appendChild(name);
+
+  if (m.date) {
+    const dateEl = document.createElement("div");
+    dateEl.style.cssText = "color:#888;font-size:11px;margin-top:2px";
+    dateEl.textContent = m.date;
+    el.appendChild(dateEl);
+  }
+
+  return el;
 }
 
 export function ObservationMap({ markers, height = "300px" }: ObservationMapProps) {
@@ -45,7 +73,7 @@ export function ObservationMap({ markers, height = "300px" }: ObservationMapProp
       }).addTo(map);
 
       markers.forEach((m) => {
-        L.marker([m.lat, m.lng]).addTo(map).bindPopup(m.label);
+        L.marker([m.lat, m.lng]).addTo(map).bindPopup(buildPopup(m));
       });
     });
 
@@ -67,7 +95,7 @@ export function ObservationMap({ markers, height = "300px" }: ObservationMapProp
         if (layer instanceof L.Marker) map.removeLayer(layer);
       });
       markers.forEach((m) => {
-        L.marker([m.lat, m.lng]).addTo(map).bindPopup(m.label);
+        L.marker([m.lat, m.lng]).addTo(map).bindPopup(buildPopup(m));
       });
       if (markers.length > 0) {
         map.setView([markers[0].lat, markers[0].lng], 5);

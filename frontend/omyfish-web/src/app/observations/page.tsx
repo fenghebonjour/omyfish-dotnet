@@ -39,7 +39,13 @@ export default function ObservationsPage() {
 
   const mapMarkers = observations
     .filter((o) => o.latitude != null && o.longitude != null)
-    .map((o) => ({ lat: o.latitude!, lng: o.longitude!, label: o.speciesName }));
+    .map((o) => ({
+      lat: o.latitude!,
+      lng: o.longitude!,
+      label: o.speciesName,
+      imageUrl: o.imageUrl,
+      date: new Date(o.observedAt).toLocaleDateString(),
+    }));
 
   if (loading) return <div className="text-center py-16 text-gray-400">Loading observations…</div>;
 
