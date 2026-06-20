@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useAuth } from "@/contexts/AuthContext";
+import exifr from "exifr";
 
 interface PredictionDto {
   speciesName: string;
@@ -28,6 +29,8 @@ export function FishUploader() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -38,6 +41,8 @@ export function FishUploader() {
     setResult(null);
     setError(null);
     setSaved(false);
+    setLat("");
+    setLng("");
     setLoading(true);
 
     try {
@@ -56,6 +61,17 @@ export function FishUploader() {
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const data: IdentifyFishResult = await res.json();
       setResult(data);
+
+      // Extract GPS from image EXIF; silently ignore if unavailable
+      try {
+        const gps = await exifr.gps(file);
+        if (gps?.latitude != null && gps?.longitude != null) {
+          setLat(String(gps.latitude));
+          setLng(String(gps.longitude));
+        }
+      } catch {
+        // No EXIF GPS — user can enter manually
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Identification failed");
     } finally {
@@ -74,16 +90,8 @@ export function FishUploader() {
       formData.append("scientificName", top.scientificName ?? "");
       formData.append("topConfidence", String(top.confidence));
 
-      // Try to capture GPS coordinates
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-        );
-        formData.append("latitude", String(pos.coords.latitude));
-        formData.append("longitude", String(pos.coords.longitude));
-      } catch {
-        // Location not available — save without coordinates
-      }
+      if (lat) formData.append("latitude", lat);
+      if (lng) formData.append("longitude", lng);
 
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/v1/observations`,
@@ -156,13 +164,34 @@ export function FishUploader() {
           ))}
 
           {isAuthenticated && !saved && (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="mt-2 w-full py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 text-sm font-medium disabled:opacity-50 transition-colors"
-            >
-              {saving ? "Saving…" : "Save to My Observations"}
-            </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2 items-center">
+                <label className="text-xs text-gray-500 w-20 shrink-0">Location</label>
+                <input
+                  type="number"
+                  placeholder="Latitude"
+                  value={lat}
+                  onChange={(e) => setLat(e.target.value)}
+                  className="flex-1 text-xs border rounded px-2 py-1 text-gray-700"
+                  step="any"
+                />
+                <input
+                  type="number"
+                  placeholder="Longitude"
+                  value={lng}
+                  onChange={(e) => setLng(e.target.value)}
+                  className="flex-1 text-xs border rounded px-2 py-1 text-gray-700"
+                  step="any"
+                />
+              </div>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="w-full py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 text-sm font-medium disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Saving…" : "Save to My Observations"}
+              </button>
+            </div>
           )}
           {saved && (
             <div className="text-center text-sm text-green-600 font-medium">
