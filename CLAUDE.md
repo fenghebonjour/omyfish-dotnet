@@ -42,7 +42,7 @@ src/
       OMyFish.SpeciesService.Infrastructure/ EF Core, AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
     NotificationService/OMyFish.NotificationService/  Worker + MassTransit consumers
-    AIService/                              Python FastAPI — DO NOT add .NET code here
+    AIService/                              builds from ../omyfish-ai — DO NOT add .NET code here
 frontend/omyfish-web/                       Next.js 15 + TypeScript
 infrastructure/kubernetes/                  K8s manifests
 infrastructure/helm/omyfish/                Helm chart

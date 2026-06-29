@@ -94,7 +94,7 @@ services:
 
   ai-service:
     build:
-      context: ./src/services/AIService
+      context: ../omyfish-ai
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -103,8 +103,8 @@ services:
       CLASSES_PATH: /checkpoints/classes.json
       METADATA_PATH: /metadata/fish_info.json
     volumes:
-      - ../omyfish/checkpoints:/checkpoints:ro
-      - ../omyfish/data/metadata:/metadata:ro
+      - ../omyfish-python/checkpoints:/checkpoints:ro
+      - ../omyfish-python/data/metadata:/metadata:ro
     networks: [omyfish-net]
 
   # ─── .NET Microservices ────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       Seeding__MetadataPath: "/metadata/fish_info.json"
     volumes:
-      - ../omyfish/data/metadata:/metadata:ro
+      - ../omyfish-python/data/metadata:/metadata:ro
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }

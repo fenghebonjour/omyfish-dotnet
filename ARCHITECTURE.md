@@ -56,7 +56,7 @@
 | **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, EF Core, MassTransit   |
 | **ObservationService**| Observation CRUD, EXIF extraction, PostGIS, GeoJSON        | 8083 | NetTopologySuite, MinIO SDK     |
 | **NotificationService**| Async event consumer, email/webhook dispatch             | 8084 | MassTransit consumer, Worker    |
-| **AIService**        | EfficientNet-B3 inference, CLIP fallback, ONNX export       | 8000 | Python 3.11, FastAPI, PyTorch   |
+| **AIService**        | EfficientNet-B3 inference, CLIP fallback — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
 
 ## DDD Bounded Contexts
 
@@ -329,7 +329,7 @@ Namespace: omyfish
 
 **MassTransit + RabbitMQ Quorum Queues** — MassTransit abstracts messaging behind a consistent API, adding saga support, retry policies, dead-letter queue routing, and outbox pattern support out of the box. Quorum queues replace classic mirrored queues with Raft-based consensus for true HA.
 
-**Python AI Service (preserved)** — No .NET AI library matches PyTorch for production computer vision. Keeping it as an HTTP microservice avoids a forced port and lets the data science team iterate on the model independently of the .NET release cycle.
+**omyfish-ai (shared AI microservice)** — No .NET AI library matches PyTorch for production computer vision. The AI service lives in its own repo (`../omyfish-ai`) and is shared across omyfish-python, omyfish-dotnet, and omyfish-java. The docker-compose build context points to `../omyfish-ai` so the data science team can iterate on the model independently of the .NET release cycle.
 
 **OpenTelemetry + Prometheus + Grafana + Jaeger** — The CNCF observability stack. OpenTelemetry SDK is now built into .NET 8+ as `System.Diagnostics.Activity`, making it zero-config for traces. Jaeger provides distributed trace correlation across all 5 services with a single trace ID propagated through RabbitMQ message headers.
 

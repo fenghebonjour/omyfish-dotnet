@@ -54,7 +54,7 @@ omyfish-dotnet/
       SpeciesService/          ← AI orchestration, CQRS, species KB
       ObservationService/      ← PostGIS, EXIF, GeoJSON, MinIO
       NotificationService/     ← MassTransit consumer + Worker
-      AIService/               ← Python/PyTorch (preserved)
+      AIService/               ← builds from ../omyfish-ai (shared AI service)
     shared/
       OMyFish.Shared.BuildingBlocks/   ← CQRS interfaces, AggregateRoot
       OMyFish.Shared.Contracts/        ← Integration events
