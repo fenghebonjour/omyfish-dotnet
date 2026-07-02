@@ -73,3 +73,6 @@ secrets/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local docs (not committed)
+docs/BEGINNER_GUIDE.md
