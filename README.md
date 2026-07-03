@@ -2,6 +2,9 @@
 
 > Fish species identification platform built on .NET 10 + ASP.NET Core with Clean Architecture, CQRS (MediatR), and Event-Driven design.
 
+> [!NOTE]
+> **Repo reorganization (July 2026):** the OMyFish platform is split into four repos: [omyfish-python](https://github.com/fenghebonjour/omyfish-python) (the AI-first origin, previously named `omyfish` — the old link redirects there), [omyfish-ai](https://github.com/fenghebonjour/omyfish-ai) (standalone AI microservice shared by all), [omyfish-java](https://github.com/fenghebonjour/omyfish-java), and **omyfish-dotnet** (this one).
+
 ## Stack
 
 | Layer        | Technology                                               |
