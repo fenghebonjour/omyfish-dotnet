@@ -25,7 +25,9 @@ public class AIServiceClient : IAIServiceClient
         if (result?.Predictions is null) return [];
 
         return result.Predictions
-            .Select((p, i) => new AIPrediction(p.ScientificName, p.CommonName, p.Confidence, i + 1))
+            .Select((p, i) => new AIPrediction(
+                p.ScientificName, p.CommonName, p.Confidence, i + 1,
+                p.ConservationStatus, p.Habitat, p.Diet, p.MaxSizeCm, p.Description, p.FunFact))
             .ToList();
     }
 
@@ -36,5 +38,11 @@ public class AIServiceClient : IAIServiceClient
     private sealed record AiPrediction(
         [property: JsonPropertyName("scientific_name")] string ScientificName,
         [property: JsonPropertyName("common_name")] string CommonName,
-        [property: JsonPropertyName("confidence")] double Confidence);
+        [property: JsonPropertyName("confidence")] double Confidence,
+        [property: JsonPropertyName("conservation_status")] string? ConservationStatus = null,
+        [property: JsonPropertyName("habitat")] string? Habitat = null,
+        [property: JsonPropertyName("diet")] string? Diet = null,
+        [property: JsonPropertyName("max_size_cm")] int? MaxSizeCm = null,
+        [property: JsonPropertyName("description")] string? Description = null,
+        [property: JsonPropertyName("fun_fact")] string? FunFact = null);
 }

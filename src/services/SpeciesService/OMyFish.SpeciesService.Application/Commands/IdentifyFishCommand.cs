@@ -20,4 +20,9 @@ public sealed record PredictionDto(
     double Confidence,
     string ConfidencePercent,
     int Rank,
-    string? ConservationStatus);
+    string? ConservationStatus,
+    string? Habitat = null,
+    string? Diet = null,
+    int? MaxSizeCm = null,
+    string? Description = null,
+    string? FunFact = null);

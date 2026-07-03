@@ -12,6 +12,11 @@ interface PredictionDto {
   confidencePercent: string;
   rank: number;
   conservationStatus?: string;
+  habitat?: string;
+  diet?: string;
+  maxSizeCm?: number;
+  description?: string;
+  funFact?: string;
 }
 
 interface IdentifyFishResult {
@@ -232,16 +237,28 @@ export function FishUploader() {
   );
 }
 
+const MEDALS = ["🥇", "🥈", "🥉"];
+
+function conservationIcon(status: string): string {
+  if (/Endangered/i.test(status)) return "🔴";
+  if (/Vulnerable|Threatened/i.test(status)) return "🟡";
+  return "🟢";
+}
+
 function PredictionCard({ prediction }: { prediction: PredictionDto }) {
   const pct = Math.round(prediction.confidence * 100);
   const barColor =
     pct >= 85 ? "bg-green-500" : pct >= 50 ? "bg-yellow-400" : "bg-red-400";
+  const medal = MEDALS[prediction.rank - 1] ?? "";
 
   return (
     <div className="border rounded-xl p-4 flex flex-col gap-2 shadow-sm">
       <div className="flex justify-between items-start">
         <div>
-          <p className="font-semibold text-gray-900">{prediction.speciesName}</p>
+          <p className="font-semibold text-gray-900">
+            {medal && <span className="mr-1">{medal}</span>}
+            {prediction.speciesName}
+          </p>
           <p className="text-sm text-gray-500 italic">{prediction.scientificName}</p>
         </div>
         <span className="text-sm font-medium text-gray-700">
@@ -254,34 +271,31 @@ function PredictionCard({ prediction }: { prediction: PredictionDto }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      {prediction.conservationStatus && (
-        <ConservationBadge status={prediction.conservationStatus} />
+      <div className="flex flex-col gap-1 text-sm text-gray-700">
+        {prediction.habitat && (
+          <p><span className="font-medium">Habitat:</span> {prediction.habitat}</p>
+        )}
+        {prediction.diet && (
+          <p><span className="font-medium">Diet:</span> {prediction.diet}</p>
+        )}
+        {prediction.maxSizeCm != null && (
+          <p><span className="font-medium">Max size:</span> {prediction.maxSizeCm} cm</p>
+        )}
+        {prediction.conservationStatus && (
+          <p>
+            <span className="font-medium">Conservation:</span>{" "}
+            {conservationIcon(prediction.conservationStatus)} {prediction.conservationStatus}
+          </p>
+        )}
+      </div>
+      {prediction.description && (
+        <p className="text-sm text-gray-600">{prediction.description}</p>
+      )}
+      {prediction.funFact && (
+        <p className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-2 text-blue-800">
+          💡 {prediction.funFact}
+        </p>
       )}
     </div>
-  );
-}
-
-function ConservationBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    LC: "bg-green-100 text-green-800",
-    NT: "bg-lime-100 text-lime-800",
-    VU: "bg-yellow-100 text-yellow-800",
-    EN: "bg-orange-100 text-orange-800",
-    CR: "bg-red-100 text-red-800",
-    EW: "bg-purple-100 text-purple-800",
-    EX: "bg-gray-200 text-gray-700",
-    "Least Concern": "bg-green-100 text-green-800",
-    Vulnerable: "bg-yellow-100 text-yellow-800",
-    Endangered: "bg-orange-100 text-orange-800",
-    "Critically Endangered": "bg-red-100 text-red-800",
-  };
-  return (
-    <span
-      className={`self-start text-xs px-2 py-0.5 rounded-full font-medium ${
-        colors[status] ?? "bg-gray-100 text-gray-600"
-      }`}
-    >
-      {status.length <= 4 ? `IUCN: ${status}` : status}
-    </span>
   );
 }

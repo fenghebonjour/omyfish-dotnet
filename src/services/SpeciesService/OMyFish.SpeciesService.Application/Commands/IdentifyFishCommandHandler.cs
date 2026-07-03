@@ -40,7 +40,13 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
 
             predictions.Add(new PredictionDto(
                 species.CommonName, species.ScientificName,
-                score.Value, score.AsPercent(), ai.Rank, species.ConservationStatus));
+                score.Value, score.AsPercent(), ai.Rank,
+                ai.ConservationStatus ?? species.ConservationStatus,
+                ai.Habitat ?? species.Habitat,
+                ai.Diet,
+                ai.MaxSizeCm,
+                ai.Description ?? species.Description,
+                ai.FunFact));
 
             if (ai.Rank == 1) topSpecies = species;
         }

@@ -10,4 +10,10 @@ public sealed record AIPrediction(
     string ScientificName,
     string CommonName,
     double Confidence,
-    int Rank);
+    int Rank,
+    string? ConservationStatus = null,
+    string? Habitat = null,
+    string? Diet = null,
+    int? MaxSizeCm = null,
+    string? Description = null,
+    string? FunFact = null);
