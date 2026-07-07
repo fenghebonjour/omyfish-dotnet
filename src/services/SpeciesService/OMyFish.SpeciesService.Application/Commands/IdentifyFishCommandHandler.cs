@@ -24,12 +24,12 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
 
     public async Task<IdentifyFishResult> Handle(IdentifyFishCommand command, CancellationToken ct)
     {
-        var aiResults = await _aiClient.PredictAsync(command.ImageStorageKey, command.TopK, ct);
+        var aiResult = await _aiClient.PredictAsync(command.ImageStorageKey, command.TopK, ct);
 
         var predictions = new List<PredictionDto>();
         Species? topSpecies = null;
 
-        foreach (var ai in aiResults)
+        foreach (var ai in aiResult.Predictions)
         {
             var species = await _speciesRepository.FindByScientificNameAsync(ai.ScientificName, ct)
                 ?? Species.Create(ai.ScientificName, ai.CommonName, "Unknown",
@@ -59,6 +59,6 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
         }
 
         bool uncertain = predictions.Count == 0 || predictions[0].Confidence < 0.30;
-        return new IdentifyFishResult(predictions, uncertain, command.ImageStorageKey);
+        return new IdentifyFishResult(predictions, uncertain, command.ImageStorageKey, aiResult.IsFish);
     }
 }

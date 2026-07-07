@@ -42,7 +42,6 @@ src/
       OMyFish.SpeciesService.Infrastructure/ EF Core, AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
     NotificationService/OMyFish.NotificationService/  Worker + MassTransit consumers
-    AIService/                              builds from ../omyfish-ai — DO NOT add .NET code here
 frontend/omyfish-web/                       Next.js 15 + TypeScript
 infrastructure/kubernetes/                  K8s manifests
 infrastructure/helm/omyfish/                Helm chart
@@ -81,7 +80,7 @@ Both use MediatR. Register handlers with `services.AddMediatR(...)`.
 
 ## AI Service
 
-Python service called via `IAIServiceClient` (typed HttpClient).
+Python service (built from `../omyfish-ai` — see docker-compose.yml) called via `IAIServiceClient` (typed HttpClient).
 Adapter in `OMyFish.SpeciesService.Infrastructure/ExternalServices/AIServiceClient.cs`.
 Do not add ML.NET or ONNX Runtime to .NET services — keep AI in Python.
 

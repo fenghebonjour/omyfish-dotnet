@@ -13,6 +13,7 @@ export interface IdentifyFishResult {
   predictions: PredictionDto[];
   uncertain: boolean;
   imageKey: string;
+  isFish?: boolean;
 }
 
 export interface ObservationDto {

@@ -2,9 +2,13 @@ namespace OMyFish.SpeciesService.Application.Interfaces;
 
 public interface IAIServiceClient
 {
-    Task<IReadOnlyList<AIPrediction>> PredictAsync(
+    Task<AIServiceResult> PredictAsync(
         string imageStorageKey, int topK, CancellationToken ct = default);
 }
+
+public sealed record AIServiceResult(
+    IReadOnlyList<AIPrediction> Predictions,
+    bool IsFish = true);
 
 public sealed record AIPrediction(
     string ScientificName,

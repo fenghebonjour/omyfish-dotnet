@@ -12,28 +12,30 @@ public class AIServiceClient : IAIServiceClient
 
     public AIServiceClient(HttpClient http) => _http = http;
 
-    public async Task<IReadOnlyList<AIPrediction>> PredictAsync(
+    public async Task<AIServiceResult> PredictAsync(
         string imageBase64, int topK, CancellationToken ct = default)
     {
         var response = await _http.PostAsJsonAsync("/predict",
             new { image_base64 = imageBase64, top_k = topK }, ct);
 
         if (!response.IsSuccessStatusCode)
-            return [];
+            return new AIServiceResult([]);
 
         var result = await response.Content.ReadFromJsonAsync<AiServiceResponse>(ct);
-        if (result?.Predictions is null) return [];
+        if (result?.Predictions is null) return new AIServiceResult([]);
 
-        return result.Predictions
+        var predictions = result.Predictions
             .Select((p, i) => new AIPrediction(
                 p.ScientificName, p.CommonName, p.Confidence, i + 1,
                 p.ConservationStatus, p.Habitat, p.Diet, p.MaxSizeCm, p.Description, p.FunFact))
             .ToList();
+        return new AIServiceResult(predictions, result.IsFish);
     }
 
     private sealed record AiServiceResponse(
         [property: JsonPropertyName("predictions")] List<AiPrediction> Predictions,
-        [property: JsonPropertyName("uncertain")] bool Uncertain);
+        [property: JsonPropertyName("uncertain")] bool Uncertain,
+        [property: JsonPropertyName("is_fish")] bool IsFish = true);
 
     private sealed record AiPrediction(
         [property: JsonPropertyName("scientific_name")] string ScientificName,

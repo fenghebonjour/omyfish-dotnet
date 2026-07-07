@@ -12,7 +12,8 @@ public sealed record IdentifyFishCommand(
 public sealed record IdentifyFishResult(
     IReadOnlyList<PredictionDto> Predictions,
     bool Uncertain,
-    string ImageKey);
+    string ImageKey,
+    bool IsFish = true);
 
 public sealed record PredictionDto(
     string SpeciesName,
