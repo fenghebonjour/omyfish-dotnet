@@ -23,9 +23,18 @@ public static class IdentificationEndpoints
 
             var userId = GetUserIdFromClaims(ctx);
             var command = new IdentifyFishCommand(imageBase64, topK, userId);
-            var result = await mediator.Send(command, ct);
-
-            return Results.Ok(result);
+            try
+            {
+                var result = await mediator.Send(command, ct);
+                return Results.Ok(result);
+            }
+            catch (HttpRequestException)
+            {
+                return Results.Problem(
+                    title: "AI service unavailable",
+                    detail: "The species identification service is unreachable or still starting. Try again shortly.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         })
         .AllowAnonymous()
         .DisableAntiforgery()

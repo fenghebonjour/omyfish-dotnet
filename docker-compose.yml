@@ -3,6 +3,10 @@ version: "3.9"
 networks:
   omyfish-net:
     driver: bridge
+  # Created by ../omyfish-ai's compose — start that stack first:
+  #   cd ../omyfish-ai && docker compose up -d
+  omyfish-shared:
+    external: true
 
 volumes:
   postgres_data:
@@ -91,8 +95,13 @@ services:
     networks: [omyfish-net]
 
   # ─── AI Service (Python — preserved from omyfish) ─────────────────────────
+  # Default: NOT started. The shared instance runs from ../omyfish-ai's own
+  # compose on the omyfish-shared network. For a self-contained demo without
+  # the external instance, run: docker compose --profile bundled up -d
+  # (conflicts with the external instance on host port 8000 — run only one).
 
   ai-service:
+    profiles: [bundled]
     build:
       context: ../omyfish-ai
       dockerfile: Dockerfile
@@ -106,6 +115,12 @@ services:
       - ../omyfish-python/checkpoints:/checkpoints:ro
       - ../omyfish-python/data/metadata:/metadata:ro
     networks: [omyfish-net]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 600s
 
   # ─── .NET Microservices ────────────────────────────────────────────────────
 
@@ -143,7 +158,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
-    networks: [omyfish-net]
+    networks: [omyfish-net, omyfish-shared]
 
   observation-service:
     build:
