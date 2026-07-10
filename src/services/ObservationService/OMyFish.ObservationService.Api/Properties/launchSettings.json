@@ -4,7 +4,15 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ConnectionStrings__Default": "Host=localhost;Database=omyfish;Username=omyfish;Password=omyfish_dev",
+        "Jwt__Secret": "dev-secret-change-in-production-min-32-chars",
+        "RabbitMQ__Host": "localhost",
+        "RabbitMQ__Username": "omyfish",
+        "RabbitMQ__Password": "omyfish_dev",
+        "MinIO__Endpoint": "localhost:9000",
+        "MinIO__AccessKey": "omyfish",
+        "MinIO__SecretKey": "omyfish_dev"
       },
       "applicationUrl": "https://localhost:56142;http://localhost:56146"
     }

@@ -4,7 +4,11 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Jwt__Secret": "dev-secret-change-in-production-min-32-chars",
+        "ReverseProxy__Clusters__identity-cluster__Destinations__primary__Address": "http://localhost:56145",
+        "ReverseProxy__Clusters__species-cluster__Destinations__primary__Address": "http://localhost:56144",
+        "ReverseProxy__Clusters__observations-cluster__Destinations__primary__Address": "http://localhost:56146"
       },
       "applicationUrl": "https://localhost:56139;http://localhost:56140"
     }

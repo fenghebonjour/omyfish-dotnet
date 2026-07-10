@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "OMyFish.NotificationService": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "RabbitMQ__Host": "localhost",
+        "RabbitMQ__Username": "omyfish",
+        "RabbitMQ__Password": "omyfish_dev"
+      }
+    }
+  }
+}
