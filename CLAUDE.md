@@ -84,6 +84,8 @@ Python service (built from `../omyfish-ai` — see docker-compose.yml) called vi
 Adapter in `OMyFish.SpeciesService.Infrastructure/ExternalServices/AIServiceClient.cs`.
 Do not add ML.NET or ONNX Runtime to .NET services — keep AI in Python.
 
+Besides fish ID (`POST /predict`), ai-service exposes the Bite Score forecast (`GET /bite-score/forecast|today|species-key`). Bite-score responses always include a six-factor breakdown — pass it through to clients untouched, never reduce it to just the headline score. `GET /bite-score/species-key?name=` maps a confirmed fish ID to the species key to store per user for tuned forecasts.
+
 ## Key NuGet Packages
 
 - `MediatR` (CQRS pipeline)

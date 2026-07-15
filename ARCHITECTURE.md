@@ -56,7 +56,7 @@
 | **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, EF Core, MassTransit   |
 | **ObservationService**| Observation CRUD, EXIF extraction, PostGIS, GeoJSON        | 8083 | NetTopologySuite, MinIO SDK     |
 | **NotificationService**| Async event consumer, email/webhook dispatch             | 8084 | MassTransit consumer, Worker    |
-| **AIService**        | EfficientNet-B3 inference, CLIP fallback — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
+| **AIService**        | EfficientNet-B3 inference, CLIP fallback, Bite Score forecast — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
 
 ## DDD Bounded Contexts
 
