@@ -153,5 +153,6 @@ app.MapGet("/health", () => "ok");
 app.MapMetrics("/metrics");
 app.MapSpeciesEndpoints();
 app.MapIdentificationEndpoints();
+app.MapBiteScoreEndpoints();
 
 app.Run();

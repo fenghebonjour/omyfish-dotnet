@@ -31,6 +31,23 @@ export interface ObservationDto {
   createdAt: string;
 }
 
+export interface BiteHourlyScore {
+  timestamp: string;
+  score: number;
+  breakdown: Record<string, number>;
+  weightedContribution: Record<string, number>;
+  timeOfDayMultiplier: number;
+  safetyFlag?: string | null;
+}
+
+export interface BiteForecast {
+  species: string;
+  lat: number;
+  lon: number;
+  hourly: BiteHourlyScore[];
+  bestWindows: BiteHourlyScore[];
+}
+
 export interface TokenResponse {
   accessToken: string;
   refreshToken: string;
@@ -103,6 +120,18 @@ export const api = {
         : "";
       return apiFetch<PredictionDto[]>(`/api/v1/species${params}`);
     },
+  },
+
+  biteScore: {
+    // species accepts a profile key or any common/scientific name from a
+    // confirmed fish ID — the backend resolves it (general fallback).
+    today: (lat: number, lon: number, species = "general") =>
+      apiFetch<BiteForecast>(
+        `/api/v1/species/bite-score/today?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
+
+    forecast: (lat: number, lon: number, species = "general", hours = 168) =>
+      apiFetch<BiteForecast>(
+        `/api/v1/species/bite-score/forecast?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}&hours=${hours}`),
   },
 
   observations: {

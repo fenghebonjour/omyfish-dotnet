@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ObservationDto } from "@/lib/api";
 import { ObservationMap } from "@/components/ObservationMap";
+import { BiteScorePanel } from "@/components/BiteScorePanel";
 
 export default function ObservationsPage() {
   const { isAuthenticated, isLoading: authLoading, token } = useAuth();
@@ -89,8 +90,10 @@ function ObservationCard({
   obs: ObservationDto;
   onDelete: (id: string) => void;
 }) {
+  const [showBiteScore, setShowBiteScore] = useState(false);
   const confidence = Math.round(obs.topConfidence * 100);
   const barColor = confidence >= 85 ? "bg-green-500" : confidence >= 50 ? "bg-yellow-400" : "bg-red-400";
+  const hasLocation = obs.latitude != null && obs.longitude != null;
 
   return (
     <div className="border rounded-xl p-4 bg-white shadow-sm flex gap-4">
@@ -128,11 +131,27 @@ function ObservationCard({
 
         <div className="mt-1 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
           <span>{new Date(obs.observedAt).toLocaleDateString()}</span>
-          {obs.latitude != null && obs.longitude != null && (
-            <span>📍 {obs.latitude.toFixed(4)}, {obs.longitude.toFixed(4)}</span>
+          {hasLocation && (
+            <span>📍 {obs.latitude!.toFixed(4)}, {obs.longitude!.toFixed(4)}</span>
           )}
           {obs.notes && <span>📝 {obs.notes}</span>}
+          {hasLocation && (
+            <button
+              onClick={() => setShowBiteScore((s) => !s)}
+              className="text-blue-600 hover:underline"
+            >
+              🎣 {showBiteScore ? "Hide bite score" : "Bite score"}
+            </button>
+          )}
         </div>
+
+        {showBiteScore && hasLocation && (
+          <BiteScorePanel
+            lat={obs.latitude!}
+            lon={obs.longitude!}
+            species={obs.speciesName}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using OMyFish.SpeciesService.Application.DTOs;
 using OMyFish.SpeciesService.Application.Interfaces;
 
 namespace OMyFish.SpeciesService.Infrastructure.ExternalServices;
@@ -31,6 +33,50 @@ public class AIServiceClient : IAIServiceClient
             .ToList();
         return new AIServiceResult(predictions, result.IsFish);
     }
+
+    public async Task<BiteForecastDto> GetBiteForecastAsync(
+        double lat, double lon, string species, int hours, CancellationToken ct = default)
+    {
+        // Resolve first so callers can pass a confirmed fish-ID name directly;
+        // unknown species fall back to the "general" profile instead of a 400.
+        var keyResp = await _http.GetFromJsonAsync<SpeciesKeyResponse>(
+            $"/bite-score/species-key?name={Uri.EscapeDataString(species)}", ct);
+        var speciesKey = keyResp?.SpeciesKey ?? "general";
+
+        var lc = CultureInfo.InvariantCulture;
+        var forecast = await _http.GetFromJsonAsync<BiteForecastResponse>(
+            $"/bite-score/forecast?lat={lat.ToString(lc)}&lon={lon.ToString(lc)}&species={speciesKey}&hours={hours}", ct)
+            ?? throw new HttpRequestException("Empty bite-score response from ai-service.");
+
+        return new BiteForecastDto(
+            forecast.Species, forecast.Lat, forecast.Lon,
+            forecast.Hourly.Select(ToDto).ToList(),
+            forecast.BestWindows.Select(ToDto).ToList());
+    }
+
+    private static BiteHourlyScoreDto ToDto(BiteHourlyScore h) => new(
+        h.Timestamp, h.Score, h.Breakdown, h.WeightedContribution,
+        h.TimeOfDayMultiplier, h.SafetyFlag);
+
+    private sealed record SpeciesKeyResponse(
+        [property: JsonPropertyName("input")] string Input,
+        [property: JsonPropertyName("species_key")] string SpeciesKey,
+        [property: JsonPropertyName("matched")] bool Matched);
+
+    private sealed record BiteForecastResponse(
+        [property: JsonPropertyName("species")] string Species,
+        [property: JsonPropertyName("lat")] double Lat,
+        [property: JsonPropertyName("lon")] double Lon,
+        [property: JsonPropertyName("hourly")] List<BiteHourlyScore> Hourly,
+        [property: JsonPropertyName("best_windows")] List<BiteHourlyScore> BestWindows);
+
+    private sealed record BiteHourlyScore(
+        [property: JsonPropertyName("timestamp")] DateTime Timestamp,
+        [property: JsonPropertyName("score")] double Score,
+        [property: JsonPropertyName("breakdown")] Dictionary<string, double> Breakdown,
+        [property: JsonPropertyName("weighted_contribution")] Dictionary<string, double> WeightedContribution,
+        [property: JsonPropertyName("time_of_day_multiplier")] double TimeOfDayMultiplier,
+        [property: JsonPropertyName("safety_flag")] string? SafetyFlag);
 
     private sealed record AiServiceResponse(
         [property: JsonPropertyName("predictions")] List<AiPrediction> Predictions,

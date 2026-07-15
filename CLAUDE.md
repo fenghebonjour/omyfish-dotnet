@@ -86,6 +86,8 @@ Do not add ML.NET or ONNX Runtime to .NET services — keep AI in Python.
 
 Besides fish ID (`POST /predict`), ai-service exposes the Bite Score forecast (`GET /bite-score/forecast|today|species-key`). Bite-score responses always include a six-factor breakdown — pass it through to clients untouched, never reduce it to just the headline score. `GET /bite-score/species-key?name=` maps a confirmed fish ID to the species key to store per user for tuned forecasts.
 
+species-service proxies these at `GET /api/v1/species/bite-score/forecast|today` (rides the existing YARP species catch-all; `species` accepts a key or any name — `AIServiceClient` resolves it via `/bite-score/species-key`, general fallback). Frontend: `BiteScorePanel` on each located observation card.
+
 ## Key NuGet Packages
 
 - `MediatR` (CQRS pipeline)
