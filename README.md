@@ -1,6 +1,6 @@
 # OMyFish — Enterprise .NET 10 Platform
 
-> Fish species identification platform built on .NET 10 + ASP.NET Core with Clean Architecture, CQRS (MediatR), and Event-Driven design.
+> **OMyFish — Your AI Fishing Companion.** *When, Where, What you catch.* AI fish identification, GPS-logged observations on a map, and a Bite Score timing forecast — built on .NET 10 + ASP.NET Core with Clean Architecture, CQRS (MediatR), and Event-Driven design.
 
 > [!NOTE]
 > **Repo reorganization (July 2026):** the OMyFish platform is split into four repos: [omyfish-python](https://github.com/fenghebonjour/omyfish-python) (the AI-first origin, previously named `omyfish` — the old link redirects there), [omyfish-ai](https://github.com/fenghebonjour/omyfish-ai) (standalone AI microservice shared by all), [omyfish-java](https://github.com/fenghebonjour/omyfish-java), and **omyfish-dotnet** (this one).
@@ -56,12 +56,12 @@ omyfish-dotnet/
       IdentityService/         ← JWT, OAuth2/OIDC, API keys
       SpeciesService/          ← AI orchestration, CQRS, species KB
       ObservationService/      ← PostGIS, EXIF, GeoJSON, MinIO
-      NotificationService/     ← MassTransit consumer + Worker
+      NotificationService/     ← notifications web API + MassTransit consumers
       AIService/               ← builds from ../omyfish-ai (shared: fish ID + Bite Score)
     shared/
       OMyFish.Shared.BuildingBlocks/   ← CQRS interfaces, AggregateRoot
       OMyFish.Shared.Contracts/        ← Integration events
-  frontend/omyfish-web/        ← Next.js 15 frontend
+  frontend/omyfish-web/        ← Next.js 15 frontend (/, /timing, /observations, /notifications, /login, /register)
   infrastructure/
     kubernetes/                ← Deployments, HPA, Ingress
     helm/omyfish/              ← Helm chart

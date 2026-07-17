@@ -17,7 +17,7 @@
 │  Identity   │ │  Species   │ │Observation │ │ Notification   │
 │  Service   │ │  Service   │ │  Service   │ │   Service      │
 │  .NET 10   │ │  .NET 10   │ │  .NET 10   │ │   .NET 10      │
-│  Minimal   │ │  Minimal   │ │  Minimal   │ │  Worker Svc    │
+│  Minimal   │ │  Minimal   │ │  Minimal   │ │  Minimal API   │
 │  APIs + EF │ │  APIs + EF │ │  APIs + EF │ │  + MassTransit │
 └──────┬──────┘ └──────┬─────┘ └──────┬─────┘ └────────────────┘
        │               │              │              ▲
@@ -55,7 +55,7 @@
 | **IdentityService**  | User auth, JWT issuance, OAuth2/OIDC, API keys             | 8081 | ASP.NET Identity, EF Core       |
 | **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, EF Core, MassTransit   |
 | **ObservationService**| Observation CRUD, EXIF extraction, PostGIS, GeoJSON        | 8083 | NetTopologySuite, MinIO SDK     |
-| **NotificationService**| Async event consumer, email/webhook dispatch             | 8084 | MassTransit consumer, Worker    |
+| **NotificationService**| Notifications read/mark-read API, async event consumers  | 8084 | Minimal API, EF Core, MassTransit |
 | **AIService**        | EfficientNet-B3 inference, CLIP fallback, Bite Score forecast — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
 
 ## DDD Bounded Contexts
@@ -75,11 +75,11 @@
 ┌──────────────────────────────┐    ┌──────────────────────────────────┐
 │   OBSERVATION CONTEXT        │    │  NOTIFICATION CONTEXT            │
 │                              │    │                                  │
-│  Aggregate: Observation      │    │  No domain model.                │
-│  ValueObj:  GpsCoordinates   │    │  Pure MassTransit consumer.      │
-│  ValueObj:  ExifMetadata     │    │  Reacts to integration events    │
-│  Event:     ObsCreatedEvent  │    │  from other bounded contexts.    │
-│  Command:   CreateObservation│    │                                  │
+│  Aggregate: Observation      │    │  Entity: Notification            │
+│  ValueObj:  GpsCoordinates   │    │  Consumes integration events     │
+│  ValueObj:  ExifMetadata     │    │  from other bounded contexts,    │
+│  Event:     ObsCreatedEvent  │    │  persists notifications, and     │
+│  Command:   CreateObservation│    │  exposes a read/mark-read API.   │
 │  Query:     GetGeoJson       │    │                                  │
 └──────────────────────────────┘    └──────────────────────────────────┘
 ```
@@ -226,6 +226,8 @@ POST /api/v1/species/identify
 
 GET  /api/v1/species/{scientificName}
 GET  /api/v1/species?family=&conservationStatus=&page=0&size=20
+GET  /api/v1/species/bite-score/forecast?lat=&lon=&species=general&hours=336   (proxied to ai-service)
+GET  /api/v1/species/bite-score/today?lat=&lon=&species=general                (proxied to ai-service)
 ```
 
 ### ObservationService
@@ -244,6 +246,12 @@ POST /api/v1/auth/login      { email, password } → { accessToken, refreshToken
 POST /api/v1/auth/refresh    { refreshToken }
 POST /api/v1/auth/api-keys   → { apiKey }
 GET  /api/v1/auth/me
+```
+
+### NotificationService
+```
+GET /api/v1/notifications              → current user's notifications, newest first
+PUT /api/v1/notifications/{id}/read    → mark one as read
 ```
 
 ## Security Architecture

@@ -4,8 +4,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { NavBar } from "@/components/NavBar";
 
 export const metadata: Metadata = {
-  title: "OMyFish — Fish Identification",
-  description: "Identify fish species using AI",
+  title: "OMyFish — Your AI Fishing Companion",
+  description: "When, Where, What you catch.",
 };
 
 export default function RootLayout({

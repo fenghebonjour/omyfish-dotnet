@@ -4,6 +4,7 @@
 
 ```bash
 make up                         # start all Docker services
+make build-up                   # rebuild images first, then start (code/deps/Dockerfile changed)
 make down                       # stop all services
 make build                      # dotnet build omyfish-dotnet.sln
 make test                       # dotnet test (all projects)
@@ -42,7 +43,7 @@ src/
       OMyFish.SpeciesService.Infrastructure/ EF Core, AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
     NotificationService/OMyFish.NotificationService/  Web API (notifications read/mark-read) + MassTransit consumers
-frontend/omyfish-web/                       Next.js 15 + TypeScript
+frontend/omyfish-web/                       Next.js 15 + TypeScript (pages: /, /timing, /observations, /notifications, /login, /register)
 infrastructure/kubernetes/                  K8s manifests
 infrastructure/helm/omyfish/                Helm chart
 migrations/                                 Raw SQL (applied by make migrate)
@@ -86,7 +87,7 @@ Do not add ML.NET or ONNX Runtime to .NET services — keep AI in Python.
 
 Besides fish ID (`POST /predict`), ai-service exposes the Bite Score forecast (`GET /bite-score/forecast|today|species-key`). Bite-score responses always include a six-factor breakdown — pass it through to clients untouched, never reduce it to just the headline score. `GET /bite-score/species-key?name=` maps a confirmed fish ID to the species key to store per user for tuned forecasts.
 
-species-service proxies these at `GET /api/v1/species/bite-score/forecast|today` (rides the existing YARP species catch-all; `species` accepts a key or any name — `AIServiceClient` resolves it via `/bite-score/species-key`, general fallback). Frontend: `BiteScorePanel` on each located observation card.
+species-service proxies these at `GET /api/v1/species/bite-score/forecast|today` (rides the existing YARP species catch-all; `species` accepts a key or any name — `AIServiceClient` resolves it via `/bite-score/species-key`, general fallback). Frontend: the `/timing` page (`src/app/timing/`, components in `src/components/timing/`) — 7-day outlook strip with 14-day calendar, hourly activity curve, Major/Minor peak windows, storm safety alerts — plus `BiteScorePanel` on each located observation card.
 
 ## Key NuGet Packages
 
@@ -100,6 +101,8 @@ species-service proxies these at `GET /api/v1/species/bite-score/forecast|today`
 - `Serilog.AspNetCore` (structured logging)
 
 ## Testing
+
+Test projects live in `tests/` (`OMyFish.IdentityService.Tests`, `OMyFish.ObservationService.Tests`, `OMyFish.SpeciesService.Tests`) — run with `make test`.
 
 - Unit: xUnit, NSubstitute (or Moq) — no infrastructure deps
 - Integration: `WebApplicationFactory<Program>` + Testcontainers.PostgreSql
