@@ -2,20 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, BiteForecast, BiteHourlyScore } from "@/lib/api";
-
-const FACTORS = ["pressure", "temperature", "wind", "water", "solunar", "sky"] as const;
-
-function scoreColor(score: number) {
-  if (score >= 70) return "text-green-600";
-  if (score >= 40) return "text-yellow-600";
-  return "text-red-500";
-}
-
-function barColor(score: number) {
-  if (score >= 70) return "bg-green-500";
-  if (score >= 40) return "bg-yellow-400";
-  return "bg-red-400";
-}
+import { FACTORS, barColor, scoreColor } from "@/lib/biteScore";
 
 function windowLabel(w: BiteHourlyScore) {
   const d = new Date(w.timestamp);
@@ -48,7 +35,12 @@ export function BiteScorePanel({
   if (!forecast)
     return <div className="mt-3 text-xs text-gray-400 animate-pulse">Loading bite score…</div>;
 
-  const now = forecast.hourly[0];
+  // The forecast is anchored at local midnight, so find the current hour.
+  const currentHour = new Date();
+  currentHour.setMinutes(0, 0, 0);
+  const now =
+    forecast.hourly.find((h) => new Date(h.timestamp).getTime() === currentHour.getTime()) ??
+    forecast.hourly[forecast.hourly.length - 1];
   if (!now)
     return <div className="mt-3 text-xs text-gray-400">No forecast data for this spot.</div>;
 

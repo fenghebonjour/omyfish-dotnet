@@ -40,12 +40,34 @@ export interface BiteHourlyScore {
   safetyFlag?: string | null;
 }
 
+export interface TimeWindow {
+  start: string;
+  end: string;
+}
+
+export interface SunTimes {
+  date: string; // ISO date
+  sunrise: string;
+  sunset: string;
+}
+
+export interface CurrentConditions {
+  time: string;
+  precipitationMm: number;
+  isStorm: boolean;
+  isHeavyPrecip: boolean;
+}
+
 export interface BiteForecast {
   species: string;
   lat: number;
   lon: number;
   hourly: BiteHourlyScore[];
   bestWindows: BiteHourlyScore[];
+  majorWindows: TimeWindow[]; // per day: windows around the top-2 aggregate-score peaks
+  minorWindows: TimeWindow[]; // per day: windows around the next-2 peaks
+  sunTimes: SunTimes[]; // per-day sunrise/sunset (drives the dawn/dusk score boost)
+  current: CurrentConditions | null; // live nowcast for "right now" alerts
 }
 
 export interface TokenResponse {
@@ -129,7 +151,7 @@ export const api = {
       apiFetch<BiteForecast>(
         `/api/v1/species/bite-score/today?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
 
-    forecast: (lat: number, lon: number, species = "general", hours = 168) =>
+    forecast: (lat: number, lon: number, species = "general", hours = 336) =>
       apiFetch<BiteForecast>(
         `/api/v1/species/bite-score/forecast?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}&hours=${hours}`),
   },

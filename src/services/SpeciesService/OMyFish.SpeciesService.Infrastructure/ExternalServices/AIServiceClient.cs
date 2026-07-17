@@ -51,12 +51,27 @@ public class AIServiceClient : IAIServiceClient
         return new BiteForecastDto(
             forecast.Species, forecast.Lat, forecast.Lon,
             forecast.Hourly.Select(ToDto).ToList(),
-            forecast.BestWindows.Select(ToDto).ToList());
+            forecast.BestWindows.Select(ToDto).ToList(),
+            ToWindows(forecast.MajorWindows),
+            ToWindows(forecast.MinorWindows),
+            ToSunTimes(forecast.SunTimes),
+            forecast.Current is null
+                ? null
+                : new CurrentConditionsDto(
+                    forecast.Current.Time, forecast.Current.PrecipitationMm,
+                    forecast.Current.IsStorm, forecast.Current.IsHeavyPrecip));
     }
 
     private static BiteHourlyScoreDto ToDto(BiteHourlyScore h) => new(
         h.Timestamp, h.Score, h.Breakdown, h.WeightedContribution,
         h.TimeOfDayMultiplier, h.SafetyFlag);
+
+    // Null-safe: an ai-service image predating the peak windows omits the fields.
+    private static IReadOnlyList<TimeWindowDto> ToWindows(List<TimeWindow>? windows) =>
+        windows?.Select(w => new TimeWindowDto(w.Start, w.End)).ToList() ?? [];
+
+    private static IReadOnlyList<SunTimesDto> ToSunTimes(List<SunTimes>? sunTimes) =>
+        sunTimes?.Select(s => new SunTimesDto(s.Date, s.Sunrise, s.Sunset)).ToList() ?? [];
 
     private sealed record SpeciesKeyResponse(
         [property: JsonPropertyName("input")] string Input,
@@ -68,7 +83,26 @@ public class AIServiceClient : IAIServiceClient
         [property: JsonPropertyName("lat")] double Lat,
         [property: JsonPropertyName("lon")] double Lon,
         [property: JsonPropertyName("hourly")] List<BiteHourlyScore> Hourly,
-        [property: JsonPropertyName("best_windows")] List<BiteHourlyScore> BestWindows);
+        [property: JsonPropertyName("best_windows")] List<BiteHourlyScore> BestWindows,
+        [property: JsonPropertyName("major_windows")] List<TimeWindow>? MajorWindows = null,
+        [property: JsonPropertyName("minor_windows")] List<TimeWindow>? MinorWindows = null,
+        [property: JsonPropertyName("sun_times")] List<SunTimes>? SunTimes = null,
+        [property: JsonPropertyName("current")] CurrentConditions? Current = null);
+
+    private sealed record TimeWindow(
+        [property: JsonPropertyName("start")] DateTime Start,
+        [property: JsonPropertyName("end")] DateTime End);
+
+    private sealed record SunTimes(
+        [property: JsonPropertyName("date")] string Date,
+        [property: JsonPropertyName("sunrise")] DateTime Sunrise,
+        [property: JsonPropertyName("sunset")] DateTime Sunset);
+
+    private sealed record CurrentConditions(
+        [property: JsonPropertyName("time")] DateTime Time,
+        [property: JsonPropertyName("precipitation_mm")] double PrecipitationMm,
+        [property: JsonPropertyName("is_storm")] bool IsStorm,
+        [property: JsonPropertyName("is_heavy_precip")] bool IsHeavyPrecip);
 
     private sealed record BiteHourlyScore(
         [property: JsonPropertyName("timestamp")] DateTime Timestamp,

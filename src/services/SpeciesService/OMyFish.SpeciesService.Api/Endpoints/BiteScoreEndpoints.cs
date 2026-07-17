@@ -14,13 +14,13 @@ public static class BiteScoreEndpoints
             double lon,
             IMediator mediator,
             string species = "general",
-            int hours = 168,
+            int hours = 336,
             CancellationToken ct = default) =>
         {
             try
             {
                 var result = await mediator.Send(
-                    new GetBiteForecastQuery(lat, lon, species, Math.Clamp(hours, 1, 168)), ct);
+                    new GetBiteForecastQuery(lat, lon, species, Math.Clamp(hours, 1, 336)), ct);
                 return Results.Ok(result);
             }
             catch (HttpRequestException)
