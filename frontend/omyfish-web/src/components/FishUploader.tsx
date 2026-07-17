@@ -230,7 +230,7 @@ export function FishUploader() {
           )}
           {saved && (
             <div className="text-center text-sm text-green-600 font-medium">
-              Saved to your observations
+              Saved to your observations — <a href="/observations" className="underline">View My Observations</a>
             </div>
           )}
           {!isAuthenticated && (
