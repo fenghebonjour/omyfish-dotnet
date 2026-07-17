@@ -85,6 +85,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false,
             ValidateLifetime = true,
         };
+        // Refresh tokens are signed with the same key but must never
+        // authenticate API calls — only /api/v1/auth/refresh accepts them.
+        opts.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = ctx =>
+            {
+                if (ctx.Principal?.FindFirst("token_type")?.Value != "access")
+                    ctx.Fail("Not an access token.");
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 
