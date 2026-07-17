@@ -28,4 +28,9 @@
     <Project Path="src/shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj" />
     <Project Path="src/shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OMyFish.IdentityService.Tests/OMyFish.IdentityService.Tests.csproj" />
+    <Project Path="tests/OMyFish.ObservationService.Tests/OMyFish.ObservationService.Tests.csproj" />
+    <Project Path="tests/OMyFish.SpeciesService.Tests/OMyFish.SpeciesService.Tests.csproj" />
+  </Folder>
 </Solution>
