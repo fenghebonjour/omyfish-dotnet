@@ -70,6 +70,16 @@ export interface BiteForecast {
   current: CurrentConditions | null; // live nowcast for "right now" alerts
 }
 
+export interface NotificationDto {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface TokenResponse {
   accessToken: string;
   refreshToken: string;
@@ -154,6 +164,17 @@ export const api = {
     forecast: (lat: number, lon: number, species = "general", hours = 336) =>
       apiFetch<BiteForecast>(
         `/api/v1/species/bite-score/forecast?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}&hours=${hours}`),
+  },
+
+  notifications: {
+    getAll: (token: string) =>
+      apiFetch<NotificationDto[]>("/api/v1/notifications", {}, token),
+
+    markRead: (id: string, token: string) =>
+      fetch(`${API_BASE}/api/v1/notifications/${id}/read`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => { if (!r.ok) throw new Error(`${r.status}`); }),
   },
 
   observations: {

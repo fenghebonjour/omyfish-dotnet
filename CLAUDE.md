@@ -41,7 +41,7 @@ src/
       OMyFish.SpeciesService.Domain/        Species, Prediction, ConfidenceScore
       OMyFish.SpeciesService.Infrastructure/ EF Core, AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
-    NotificationService/OMyFish.NotificationService/  Worker + MassTransit consumers
+    NotificationService/OMyFish.NotificationService/  Web API (notifications read/mark-read) + MassTransit consumers
 frontend/omyfish-web/                       Next.js 15 + TypeScript
 infrastructure/kubernetes/                  K8s manifests
 infrastructure/helm/omyfish/                Helm chart

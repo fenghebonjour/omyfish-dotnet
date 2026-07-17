@@ -188,11 +188,14 @@ services:
     ports:
       - "8084:8080"
     environment:
+      ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
       RabbitMq__Password: omyfish_dev
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
+      postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
     networks: [omyfish-net]
 
@@ -211,6 +214,7 @@ services:
       - identity-service
       - species-service
       - observation-service
+      - notification-service
     networks: [omyfish-net]
 
   # ─── Frontend ─────────────────────────────────────────────────────────────

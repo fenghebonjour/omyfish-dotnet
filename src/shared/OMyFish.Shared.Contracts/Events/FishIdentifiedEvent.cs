@@ -1,5 +1,11 @@
+using System.Text.Json.Serialization;
+
 namespace OMyFish.Shared.Contracts.Events;
 
+// [method: JsonConstructor] disambiguates the primary constructor for
+// System.Text.Json — with the convenience overload below, deserialization
+// (MassTransit consumers) otherwise fails with NotSupportedException.
+[method: JsonConstructor]
 public record FishIdentifiedEvent(
     Guid EventId,
     DateTime OccurredOn,

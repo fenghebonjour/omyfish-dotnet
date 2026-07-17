@@ -29,9 +29,14 @@ export function NavBar() {
             Timing
           </Link>
           {isAuthenticated && (
-            <Link href="/observations" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
-              My Observations
-            </Link>
+            <>
+              <Link href="/observations" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+                My Observations
+              </Link>
+              <Link href="/notifications" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+                Notifications
+              </Link>
+            </>
           )}
         </nav>
 

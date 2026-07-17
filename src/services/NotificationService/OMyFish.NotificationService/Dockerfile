@@ -11,7 +11,9 @@ COPY . .
 RUN dotnet publish services/NotificationService/OMyFish.NotificationService/OMyFish.NotificationService.csproj \
     -c Release -o /out
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
 COPY --from=build /out .
 ENTRYPOINT ["dotnet", "OMyFish.NotificationService.dll"]
