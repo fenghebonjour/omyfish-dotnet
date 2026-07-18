@@ -9,6 +9,7 @@ public class IdentityDbContext : DbContext
 
     public DbSet<User> Users => Set<User>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +41,25 @@ public class IdentityDbContext : DbContext
             k.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
             k.Property(x => x.ExpiresAt).HasColumnName("expires_at");
             k.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Subscription>(s =>
+        {
+            s.ToTable("subscriptions");
+            s.HasKey(x => x.Id);
+            s.Property(x => x.Id).HasColumnName("id");
+            s.Property(x => x.UserId).HasColumnName("user_id");
+            s.HasIndex(x => x.UserId).IsUnique();
+            s.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue("trialing");
+            s.Property(x => x.Plan).HasColumnName("plan").HasMaxLength(20);
+            s.Property(x => x.TrialEnd).HasColumnName("trial_end");
+            s.Property(x => x.CurrentPeriodEnd).HasColumnName("current_period_end");
+            s.Property(x => x.StripeCustomerId).HasColumnName("stripe_customer_id").HasMaxLength(255);
+            s.HasIndex(x => x.StripeCustomerId);
+            s.Property(x => x.StripeSubscriptionId).HasColumnName("stripe_subscription_id").HasMaxLength(255);
+            s.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            s.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            s.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

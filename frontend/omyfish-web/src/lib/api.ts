@@ -95,6 +95,29 @@ export interface UserDto {
   role: string;
 }
 
+export interface SubscriptionDto {
+  status: string; // trialing | active | canceled | expired
+  plan: string | null;
+  trialEnd: string | null;
+  currentPeriodEnd: string | null;
+}
+
+export interface AdminStats {
+  users: number;
+  subscriptions: Record<string, number>;
+  activePlans: { monthly: number; yearly: number };
+  mrrCad: number;
+}
+
+export interface AdminSubscriptionRow {
+  userId: string;
+  email: string;
+  status: string;
+  plan: string | null;
+  trialEnd: string | null;
+  currentPeriodEnd: string | null;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const headers: HeadersInit = {
     ...(init?.headers ?? {}),
@@ -175,6 +198,45 @@ export const api = {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
       }).then((r) => { if (!r.ok) throw new Error(`${r.status}`); }),
+  },
+
+  billing: {
+    me: (token: string) =>
+      apiFetch<SubscriptionDto>("/api/v1/billing/me", {}, token),
+
+    checkout: (plan: "monthly" | "yearly", token: string) =>
+      apiFetch<{ checkoutUrl: string }>("/api/v1/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      }, token),
+  },
+
+  admin: {
+    stats: (token: string) =>
+      apiFetch<AdminStats>("/api/v1/admin/stats", {}, token),
+
+    subscriptions: (token: string) =>
+      apiFetch<AdminSubscriptionRow[]>("/api/v1/admin/subscriptions", {}, token),
+
+    grant: (userId: string, token: string, days = 365, plan = "yearly") =>
+      apiFetch<SubscriptionDto>(`/api/v1/admin/subscriptions/${userId}/grant`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days, plan }),
+      }, token),
+
+    revoke: (userId: string, token: string) =>
+      apiFetch<SubscriptionDto>(`/api/v1/admin/subscriptions/${userId}/revoke`, {
+        method: "POST",
+      }, token),
+
+    extendTrial: (userId: string, token: string, days = 7) =>
+      apiFetch<SubscriptionDto>(`/api/v1/admin/subscriptions/${userId}/extend-trial`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days }),
+      }, token),
   },
 
   observations: {

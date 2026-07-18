@@ -132,6 +132,7 @@ services:
       - "8081:8080"
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      ASPNETCORE_ENVIRONMENT: Development
       Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
@@ -146,6 +147,7 @@ services:
       - "8082:8080"
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      ASPNETCORE_ENVIRONMENT: Development
       Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
@@ -168,6 +170,7 @@ services:
       - "8083:8080"
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      ASPNETCORE_ENVIRONMENT: Development
       Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
@@ -189,6 +192,7 @@ services:
       - "8084:8080"
     environment:
       ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      ASPNETCORE_ENVIRONMENT: Development
       Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: omyfish
@@ -206,6 +210,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
       Services__Identity: "http://identity-service:8080"
       Services__Species: "http://species-service:8080"
       Services__Observation: "http://observation-service:8080"

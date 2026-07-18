@@ -70,6 +70,7 @@
 │  ValueObj:  HashedPassword   │    │  Event:     FishIdentifiedEvent  │
 │  Command:   RegisterUser     │    │  Command:   IdentifyFishCommand  │
 │  Command:   IssueToken       │    │  Query:     GetSpeciesQuery      │
+│                              │    │  Query:     GetBiteForecastQuery │
 └──────────────────────────────┘    └──────────────────────────────────┘
 
 ┌──────────────────────────────┐    ┌──────────────────────────────────┐

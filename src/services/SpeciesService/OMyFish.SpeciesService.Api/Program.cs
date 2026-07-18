@@ -64,9 +64,10 @@ builder.Services.AddMassTransit(x =>
 });
 
 // JWT auth
-var jwtSecret = builder.Configuration["Jwt__Secret"]
-             ?? builder.Configuration["Jwt:Secret"]
-             ?? "dev-secret-please-replace-in-production";
+var jwtSecret = builder.Configuration["Jwt__Secret"] ?? builder.Configuration["Jwt:Secret"];
+if (builder.Environment.IsProduction() && (jwtSecret is null || jwtSecret.StartsWith("dev-secret")))
+    throw new InvalidOperationException("Jwt__Secret must be set to a non-default value in production.");
+jwtSecret ??= "dev-secret-change-in-production-min-32-chars";
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
     {
