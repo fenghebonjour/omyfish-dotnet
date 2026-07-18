@@ -94,4 +94,71 @@ public class IdentifyFishCommandHandlerTests
 
         Assert.True(result.Uncertain);
     }
+
+    [Fact]
+    public async Task Handle_NotAFish_RejectsWithoutTouchingCatalogOrPublishing()
+    {
+        // Edge case: a cat photo — the AI service's CLIP gate rejects it upstream.
+        _ai.PredictAsync("img/key.jpg", 3, Arg.Any<CancellationToken>())
+            .Returns(new AIServiceResult(Array.Empty<AIPrediction>(), IsFish: false));
+
+        var result = await _handler.Handle(Command, CancellationToken.None);
+
+        Assert.False(result.IsFish);
+        Assert.Empty(result.Predictions);
+        Assert.True(result.Uncertain);
+        await _repo.DidNotReceive()
+            .FindByScientificNameAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _publisher.DidNotReceive()
+            .PublishAsync(Arg.Any<DomainEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_TopConfidenceExactlyAtThreshold_NotUncertain()
+    {
+        AiReturns(new AIPrediction("Sander vitreus", "Walleye", 0.30, 1));
+
+        var result = await _handler.Handle(Command, CancellationToken.None);
+
+        Assert.False(result.Uncertain);
+    }
+
+    [Fact]
+    public async Task Handle_AIMetadataOverridesCatalogFields()
+    {
+        var walleye = Species.Create("Sander vitreus", "Walleye", "Percidae",
+            "LC", "Lake", "NA", "Catalog description", true);
+        _repo.FindByScientificNameAsync("Sander vitreus", Arg.Any<CancellationToken>())
+            .Returns(walleye);
+        AiReturns(new AIPrediction("Sander vitreus", "Walleye", 0.91, 1,
+            ConservationStatus: "Near Threatened", Habitat: "River",
+            Diet: "Minnows", MaxSizeCm: 107, Description: "AI description", FunFact: "Glows"));
+
+        var result = await _handler.Handle(Command, CancellationToken.None);
+
+        var top = Assert.Single(result.Predictions);
+        Assert.Equal("Near Threatened", top.ConservationStatus);
+        Assert.Equal("River", top.Habitat);
+        Assert.Equal("Minnows", top.Diet);
+        Assert.Equal(107, top.MaxSizeCm);
+        Assert.Equal("AI description", top.Description);
+        Assert.Equal("Glows", top.FunFact);
+    }
+
+    [Fact]
+    public async Task Handle_NullAIMetadataFallsBackToCatalog()
+    {
+        var walleye = Species.Create("Sander vitreus", "Walleye", "Percidae",
+            "LC", "Lake", "NA", "Catalog description", true);
+        _repo.FindByScientificNameAsync("Sander vitreus", Arg.Any<CancellationToken>())
+            .Returns(walleye);
+        AiReturns(new AIPrediction("Sander vitreus", "Walleye", 0.91, 1));
+
+        var result = await _handler.Handle(Command, CancellationToken.None);
+
+        var top = Assert.Single(result.Predictions);
+        Assert.Equal("LC", top.ConservationStatus);
+        Assert.Equal("Lake", top.Habitat);
+        Assert.Equal("Catalog description", top.Description);
+    }
 }
