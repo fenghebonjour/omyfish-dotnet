@@ -173,5 +173,6 @@ app.MapMetrics("/metrics");
 app.MapSpeciesEndpoints();
 app.MapIdentificationEndpoints();
 app.MapBiteScoreEndpoints();
+app.MapRegsEndpoints();
 
 app.Run();

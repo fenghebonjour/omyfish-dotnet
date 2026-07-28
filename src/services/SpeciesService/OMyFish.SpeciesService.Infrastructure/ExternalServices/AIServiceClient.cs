@@ -60,6 +60,60 @@ public class AIServiceClient : IAIServiceClient
                     forecast.Current.IsStorm, forecast.Current.IsHeavyPrecip));
     }
 
+    public async Task<RegsLimitsDto> GetRegsLimitsAsync(
+        double lat, double lon, string species, CancellationToken ct = default)
+    {
+        var lc = CultureInfo.InvariantCulture;
+        var dto = await _http.GetFromJsonAsync<RegsLimitsResponse>(
+            $"/regs/limits?lat={lat.ToString(lc)}&lon={lon.ToString(lc)}&species={Uri.EscapeDataString(species)}", ct)
+            ?? throw new HttpRequestException("Empty regs limits response from ai-service.");
+
+        return new RegsLimitsDto(
+            dto.Lat, dto.Lon, dto.ZoneName, dto.ZoneInfoUrl,
+            dto.Rules.Select(r => new RegsSpeciesLimitDto(
+                r.Species, r.Period, r.CatchLimit, r.LengthLimit, r.FishingDevice, r.Note)).ToList(),
+            dto.Disclaimer);
+    }
+
+    public async Task<IReadOnlyDictionary<string, object>> GetRegsZonesGeoJsonAsync(CancellationToken ct = default)
+    {
+        var geoJson = await _http.GetFromJsonAsync<Dictionary<string, object>>("/regs/zones/geojson", ct);
+        return geoJson ?? new Dictionary<string, object>();
+    }
+
+    public async Task<IReadOnlyList<RegsStationDto>> GetRegsConsumptionStationsAsync(
+        double lat, double lon, int limit, CancellationToken ct = default)
+    {
+        var lc = CultureInfo.InvariantCulture;
+        var stations = await _http.GetFromJsonAsync<List<RegsStationResponse>>(
+            $"/regs/consumption/stations?lat={lat.ToString(lc)}&lon={lon.ToString(lc)}&limit={limit}", ct);
+        return stations?.Select(s => new RegsStationDto(
+            s.NoBqma, s.Hydronyme, s.Latitude, s.Longitude, s.DistanceKm)).ToList() ?? [];
+    }
+
+    public async Task<RegsConsumptionDto> GetRegsConsumptionAsync(
+        double lat, double lon, string species, double? sizeCm, CancellationToken ct = default)
+    {
+        var lc = CultureInfo.InvariantCulture;
+        var query = $"/regs/consumption?lat={lat.ToString(lc)}&lon={lon.ToString(lc)}&species={Uri.EscapeDataString(species)}";
+        if (sizeCm.HasValue) query += $"&size_cm={sizeCm.Value.ToString(lc)}";
+
+        var dto = await _http.GetFromJsonAsync<RegsConsumptionResponse>(query, ct)
+            ?? throw new HttpRequestException("Empty regs consumption response from ai-service.");
+
+        return new RegsConsumptionDto(
+            dto.Lat, dto.Lon, dto.Species, dto.StationName, dto.DistanceKm,
+            dto.SizeClass, dto.MealsPerMonth, dto.FishingStatus, dto.Note, dto.Disclaimer);
+    }
+
+    public async Task<RegsAnswerDto> AskRegsAsync(string question, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync("/regs/ask", new { question }, ct);
+        var dto = await response.Content.ReadFromJsonAsync<RegsAskResponse>(ct)
+            ?? throw new HttpRequestException("Empty regs ask response from ai-service.");
+        return new RegsAnswerDto(dto.Question, dto.Answer, dto.Sources, dto.Disclaimer);
+    }
+
     private static BiteHourlyScoreDto ToDto(BiteHourlyScore h) => new(
         h.Timestamp, h.Score, h.Breakdown, h.WeightedContribution,
         h.TimeOfDayMultiplier, h.SafetyFlag);
@@ -125,4 +179,45 @@ public class AIServiceClient : IAIServiceClient
         [property: JsonPropertyName("max_size_cm")] int? MaxSizeCm = null,
         [property: JsonPropertyName("description")] string? Description = null,
         [property: JsonPropertyName("fun_fact")] string? FunFact = null);
+
+    private sealed record RegsSpeciesLimitResponse(
+        [property: JsonPropertyName("species")] string Species,
+        [property: JsonPropertyName("period")] string Period,
+        [property: JsonPropertyName("catch_limit")] string CatchLimit,
+        [property: JsonPropertyName("length_limit")] string? LengthLimit,
+        [property: JsonPropertyName("fishing_device")] string? FishingDevice,
+        [property: JsonPropertyName("note")] string? Note);
+
+    private sealed record RegsLimitsResponse(
+        [property: JsonPropertyName("lat")] double Lat,
+        [property: JsonPropertyName("lon")] double Lon,
+        [property: JsonPropertyName("zone_name")] string ZoneName,
+        [property: JsonPropertyName("zone_info_url")] string? ZoneInfoUrl,
+        [property: JsonPropertyName("rules")] List<RegsSpeciesLimitResponse> Rules,
+        [property: JsonPropertyName("disclaimer")] string Disclaimer);
+
+    private sealed record RegsStationResponse(
+        [property: JsonPropertyName("no_bqma")] string NoBqma,
+        [property: JsonPropertyName("hydronyme")] string Hydronyme,
+        [property: JsonPropertyName("latitude")] double Latitude,
+        [property: JsonPropertyName("longitude")] double Longitude,
+        [property: JsonPropertyName("distance_km")] double DistanceKm);
+
+    private sealed record RegsConsumptionResponse(
+        [property: JsonPropertyName("lat")] double Lat,
+        [property: JsonPropertyName("lon")] double Lon,
+        [property: JsonPropertyName("species")] string Species,
+        [property: JsonPropertyName("station_name")] string StationName,
+        [property: JsonPropertyName("distance_km")] double DistanceKm,
+        [property: JsonPropertyName("size_class")] string? SizeClass,
+        [property: JsonPropertyName("meals_per_month")] int? MealsPerMonth,
+        [property: JsonPropertyName("fishing_status")] string? FishingStatus,
+        [property: JsonPropertyName("note")] string? Note,
+        [property: JsonPropertyName("disclaimer")] string Disclaimer);
+
+    private sealed record RegsAskResponse(
+        [property: JsonPropertyName("question")] string Question,
+        [property: JsonPropertyName("answer")] string Answer,
+        [property: JsonPropertyName("sources")] List<string> Sources,
+        [property: JsonPropertyName("disclaimer")] string Disclaimer);
 }

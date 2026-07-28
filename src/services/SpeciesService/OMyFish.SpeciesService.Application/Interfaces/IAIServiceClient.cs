@@ -9,6 +9,19 @@ public interface IAIServiceClient
 
     Task<BiteForecastDto> GetBiteForecastAsync(
         double lat, double lon, string species, int hours, CancellationToken ct = default);
+
+    Task<RegsLimitsDto> GetRegsLimitsAsync(
+        double lat, double lon, string species, CancellationToken ct = default);
+
+    Task<IReadOnlyDictionary<string, object>> GetRegsZonesGeoJsonAsync(CancellationToken ct = default);
+
+    Task<IReadOnlyList<RegsStationDto>> GetRegsConsumptionStationsAsync(
+        double lat, double lon, int limit, CancellationToken ct = default);
+
+    Task<RegsConsumptionDto> GetRegsConsumptionAsync(
+        double lat, double lon, string species, double? sizeCm, CancellationToken ct = default);
+
+    Task<RegsAnswerDto> AskRegsAsync(string question, CancellationToken ct = default);
 }
 
 public sealed record AIServiceResult(
