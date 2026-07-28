@@ -16,7 +16,7 @@ public class UserTests
     public void Create_DefaultsToActiveUserRole()
     {
         var user = User.Create("a@b.c", "hashed-pw", "Display Name");
-        Assert.Equal("user", user.Role);
+        Assert.Equal("USER", user.Role);
         Assert.True(user.IsActive);
         Assert.Equal("Display Name", user.DisplayName);
         Assert.NotEqual(Guid.Empty, user.Id);

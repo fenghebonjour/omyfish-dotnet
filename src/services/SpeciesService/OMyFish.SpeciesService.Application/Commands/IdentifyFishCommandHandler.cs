@@ -9,22 +9,29 @@ namespace OMyFish.SpeciesService.Application.Commands;
 internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishCommand, IdentifyFishResult>
 {
     private readonly IAIServiceClient _aiClient;
+    private readonly IStorageService _storage;
     private readonly ISpeciesRepository _speciesRepository;
     private readonly IMessagePublisher _publisher;
 
     public IdentifyFishCommandHandler(
         IAIServiceClient aiClient,
+        IStorageService storage,
         ISpeciesRepository speciesRepository,
         IMessagePublisher publisher)
     {
         _aiClient = aiClient;
+        _storage = storage;
         _speciesRepository = speciesRepository;
         _publisher = publisher;
     }
 
     public async Task<IdentifyFishResult> Handle(IdentifyFishCommand command, CancellationToken ct)
     {
-        var aiResult = await _aiClient.PredictAsync(command.ImageStorageKey, command.TopK, ct);
+        var storageKey = await _storage.UploadAsync(
+            new MemoryStream(command.ImageBytes), command.ImageFileName, command.ImageContentType, ct);
+
+        var imageBase64 = Convert.ToBase64String(command.ImageBytes);
+        var aiResult = await _aiClient.PredictAsync(imageBase64, command.TopK, ct);
 
         var predictions = new List<PredictionDto>();
         Species? topSpecies = null;
@@ -36,7 +43,7 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
                                   "Unknown", "Unknown", "Unknown", "", false);
 
             var score = ConfidenceScore.Create(ai.Confidence);
-            var prediction = species.IdentifyFrom(command.ImageStorageKey, score, ai.Rank);
+            var prediction = species.IdentifyFrom(storageKey, score, ai.Rank);
 
             predictions.Add(new PredictionDto(
                 species.CommonName, species.ScientificName,
@@ -59,6 +66,6 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
         }
 
         bool uncertain = predictions.Count == 0 || predictions[0].Confidence < 0.30;
-        return new IdentifyFishResult(predictions, uncertain, command.ImageStorageKey, aiResult.IsFish);
+        return new IdentifyFishResult(predictions, uncertain, storageKey, aiResult.IsFish);
     }
 }

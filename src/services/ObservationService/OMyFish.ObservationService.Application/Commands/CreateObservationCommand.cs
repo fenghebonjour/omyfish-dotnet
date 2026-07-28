@@ -7,9 +7,7 @@ public sealed record CreateObservationCommand(
     string SpeciesName,
     string? ScientificName,
     double TopConfidence,
-    Stream ImageStream,
-    string ImageFileName,
-    string ImageContentType,
+    string ImageStorageKey,
     double? Latitude,
     double? Longitude,
     string? Notes) : ICommand<CreateObservationResult>;

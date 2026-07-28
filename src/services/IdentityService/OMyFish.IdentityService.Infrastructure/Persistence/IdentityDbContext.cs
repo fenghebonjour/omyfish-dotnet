@@ -22,7 +22,7 @@ public class IdentityDbContext : DbContext
             u.HasIndex(x => x.Email).IsUnique();
             u.Property(x => x.HashedPassword).HasColumnName("hashed_password").HasMaxLength(255).IsRequired();
             u.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(100);
-            u.Property(x => x.Role).HasColumnName("role").HasMaxLength(50).HasDefaultValue("user");
+            u.Property(x => x.Role).HasColumnName("role").HasMaxLength(50).HasDefaultValue("USER");
             u.Property(x => x.IsActive).HasColumnName("is_active");
             u.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
             u.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");

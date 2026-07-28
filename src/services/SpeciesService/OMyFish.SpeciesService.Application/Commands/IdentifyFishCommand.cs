@@ -4,7 +4,9 @@ using OMyFish.Shared.BuildingBlocks.CQRS;
 namespace OMyFish.SpeciesService.Application.Commands;
 
 public sealed record IdentifyFishCommand(
-    string ImageStorageKey,
+    byte[] ImageBytes,
+    string ImageFileName,
+    string ImageContentType,
     int TopK,
     Guid UserId,
     Guid? ObservationId = null) : ICommand<IdentifyFishResult>;

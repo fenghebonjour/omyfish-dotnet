@@ -13,32 +13,23 @@ public static class ObservationEndpoints
         var group = app.MapGroup("/api/v1/observations").RequireAuthorization();
 
         group.MapPost("/", async (
-            IFormFile image,
+            CreateObservationRequest req,
             IMediator mediator,
             HttpContext ctx,
-            [FromForm] string speciesName,
-            [FromForm] string? scientificName = null,
-            [FromForm] double topConfidence = 0,
-            [FromForm] double? latitude = null,
-            [FromForm] double? longitude = null,
-            [FromForm] string? notes = null,
             CancellationToken ct = default) =>
         {
             var userId = GetUserId(ctx);
             if (userId == Guid.Empty) return Results.Unauthorized();
-            if (image.Length == 0) return Results.BadRequest("No image provided.");
+            if (string.IsNullOrWhiteSpace(req.ImageStorageKey))
+                return Results.BadRequest("imageStorageKey is required.");
 
-            using var stream = image.OpenReadStream();
             var command = new CreateObservationCommand(
-                userId, speciesName, scientificName, topConfidence,
-                stream, image.FileName, image.ContentType,
-                latitude, longitude, notes);
+                userId, req.SpeciesName, req.ScientificName, req.TopConfidence,
+                req.ImageStorageKey, req.Latitude, req.Longitude, req.Notes);
 
             var result = await mediator.Send(command, ct);
             return Results.Created($"/api/v1/observations/{result.ObservationId}", result);
         })
-        .DisableAntiforgery()
-        .Accepts<IFormFile>("multipart/form-data")
         .WithName("CreateObservation");
 
         group.MapGet("/", async (
@@ -94,3 +85,15 @@ public static class ObservationEndpoints
         return Guid.TryParse(sub, out var id) ? id : Guid.Empty;
     }
 }
+
+// JSON body — the image is already stored (species-service's /identify
+// uploaded it and returned this key), so observation-create just references
+// it instead of re-uploading, matching the family's two-step contract.
+public sealed record CreateObservationRequest(
+    string SpeciesName,
+    string? ScientificName,
+    double TopConfidence,
+    string ImageStorageKey,
+    double? Latitude,
+    double? Longitude,
+    string? Notes);

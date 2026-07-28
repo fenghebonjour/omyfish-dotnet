@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       api.auth.refresh(refreshToken)
         .then((resp) => {
           persistAuth(resp);
-          setAuth({ token: resp.accessToken, userId: resp.userId, email: resp.email });
+          setAuth({ token: resp.token, userId: resp.userId, email: resp.email });
         })
         .catch(() => clearStorage())
         .finally(() => setIsLoading(false));
@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const persistAuth = (resp: TokenResponse) => {
-    localStorage.setItem("omyfish_token", resp.accessToken);
+    localStorage.setItem("omyfish_token", resp.token);
     localStorage.setItem("omyfish_refresh", resp.refreshToken);
     localStorage.setItem("omyfish_userId", resp.userId);
     localStorage.setItem("omyfish_email", resp.email);
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const resp: TokenResponse = await api.auth.login(email, password);
     persistAuth(resp);
-    setAuth({ token: resp.accessToken, userId: resp.userId, email: resp.email });
+    setAuth({ token: resp.token, userId: resp.userId, email: resp.email });
   }, []);
 
   const logout = useCallback(() => {

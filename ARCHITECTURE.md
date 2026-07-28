@@ -234,6 +234,9 @@ GET  /api/v1/species/bite-score/today?lat=&lon=&species=general                (
 ### ObservationService
 ```
 POST   /api/v1/observations
+  Body: { speciesName, scientificName?, topConfidence, imageStorageKey, latitude?, longitude?, notes? }
+  (imageStorageKey comes from a prior /api/v1/species/identify call — the
+  image is already stored, this just references it)
 GET    /api/v1/observations?userId=&species=&from=&to=&page=&size=
 GET    /api/v1/observations/{id}
 GET    /api/v1/observations/geojson?bbox=&from=&to=
@@ -243,7 +246,7 @@ DELETE /api/v1/observations/{id}
 ### IdentityService
 ```
 POST /api/v1/auth/register   { email, password, displayName }
-POST /api/v1/auth/login      { email, password } → { accessToken, refreshToken }
+POST /api/v1/auth/login      { email, password } → { token, refreshToken, userId, email, role }
 POST /api/v1/auth/refresh    { refreshToken }
 POST /api/v1/auth/api-keys   → { apiKey }
 GET  /api/v1/auth/me

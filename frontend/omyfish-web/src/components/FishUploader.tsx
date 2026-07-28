@@ -29,7 +29,6 @@ interface IdentifyFishResult {
 export function FishUploader() {
   const { token, isAuthenticated } = useAuth();
   const [preview, setPreview] = useState<string | null>(null);
-  const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<IdentifyFishResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +41,6 @@ export function FishUploader() {
     const file = acceptedFiles[0];
     if (!file) return;
 
-    setCurrentFile(file);
     setPreview(URL.createObjectURL(file));
     setResult(null);
     setError(null);
@@ -109,25 +107,30 @@ export function FishUploader() {
   }, [token]);
 
   const handleSave = async () => {
-    if (!result || !currentFile || !token) return;
+    if (!result || !token) return;
     setSaving(true);
     try {
       const top = result.predictions[0];
-      const formData = new FormData();
-      formData.append("image", currentFile);
-      formData.append("speciesName", top.speciesName);
-      formData.append("scientificName", top.scientificName ?? "");
-      formData.append("topConfidence", String(top.confidence));
-
-      if (lat) formData.append("latitude", lat);
-      if (lng) formData.append("longitude", lng);
+      // The image is already stored — identify uploaded it and returned
+      // imageKey — so we just reference it here instead of re-uploading.
+      const body = {
+        speciesName: top.speciesName,
+        scientificName: top.scientificName ?? "",
+        topConfidence: top.confidence,
+        imageStorageKey: result.imageKey,
+        latitude: lat ? Number(lat) : null,
+        longitude: lng ? Number(lng) : null,
+      };
 
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/v1/observations`,
         {
           method: "POST",
-          body: formData,
-          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
         }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

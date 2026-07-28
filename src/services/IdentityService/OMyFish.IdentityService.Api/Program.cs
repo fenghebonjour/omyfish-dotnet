@@ -286,7 +286,7 @@ app.MapGet("/api/v1/admin/stats", async (
         activePlans = new { monthly = activeMonthly, yearly = activeYearly },
         mrrCad = Math.Round(activeMonthly * 5 + activeYearly * 29 / 12.0, 2),
     });
-}).RequireAuthorization(policy => policy.RequireRole("admin"));
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapGet("/api/v1/admin/subscriptions", async (
     ISubscriptionRepository subs, IdentityDbContext db) =>
@@ -303,7 +303,7 @@ app.MapGet("/api/v1/admin/subscriptions", async (
         s.TrialEnd,
         s.CurrentPeriodEnd,
     }));
-}).RequireAuthorization(policy => policy.RequireRole("admin"));
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/grant", async (
     Guid userId, GrantRequest? req, ISubscriptionRepository subs) =>
@@ -314,7 +314,7 @@ app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/grant", async (
     await subs.SaveChangesAsync();
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
-}).RequireAuthorization(policy => policy.RequireRole("admin"));
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/revoke", async (
     Guid userId, ISubscriptionRepository subs) =>
@@ -325,7 +325,7 @@ app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/revoke", async (
     await subs.SaveChangesAsync();
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
-}).RequireAuthorization(policy => policy.RequireRole("admin"));
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/extend-trial", async (
     Guid userId, GrantRequest? req, ISubscriptionRepository subs) =>
@@ -336,7 +336,7 @@ app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/extend-trial", async (
     await subs.SaveChangesAsync();
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
-}).RequireAuthorization(policy => policy.RequireRole("admin"));
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.Run();
 
@@ -378,5 +378,5 @@ record GrantRequest(int? Days, string? Plan);
 record SubscriptionDto(string Status, string? Plan, DateTime? TrialEnd, DateTime? CurrentPeriodEnd);
 record LoginRequest(string Email, string Password);
 record RefreshRequest(string RefreshToken);
-record TokenResponse(string AccessToken, string RefreshToken, Guid UserId, string Email, string Role);
+record TokenResponse(string Token, string RefreshToken, Guid UserId, string Email, string Role);
 record UserDto(Guid Id, string Email, string? DisplayName, string Role);

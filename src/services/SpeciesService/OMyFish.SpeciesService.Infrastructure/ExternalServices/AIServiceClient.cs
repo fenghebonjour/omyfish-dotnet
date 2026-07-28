@@ -6,8 +6,6 @@ using OMyFish.SpeciesService.Application.Interfaces;
 
 namespace OMyFish.SpeciesService.Infrastructure.ExternalServices;
 
-// Phase 4: imageStorageKey carries base64 image data directly.
-// Phase 5 will upload to MinIO first and pass the real storage key.
 public class AIServiceClient : IAIServiceClient
 {
     private readonly HttpClient _http;

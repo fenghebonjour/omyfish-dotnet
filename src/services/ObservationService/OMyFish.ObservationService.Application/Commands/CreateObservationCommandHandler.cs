@@ -10,28 +10,21 @@ internal sealed class CreateObservationCommandHandler
     : ICommandHandler<CreateObservationCommand, CreateObservationResult>
 {
     private readonly IObservationRepository _repo;
-    private readonly IStorageService _storage;
     private readonly IMessagePublisher _publisher;
 
     public CreateObservationCommandHandler(
         IObservationRepository repo,
-        IStorageService storage,
         IMessagePublisher publisher)
     {
         _repo = repo;
-        _storage = storage;
         _publisher = publisher;
     }
 
     public async Task<CreateObservationResult> Handle(
         CreateObservationCommand command, CancellationToken ct)
     {
-        var storageKey = await _storage.UploadAsync(
-            command.ImageStream,
-            command.ImageFileName,
-            command.ImageContentType,
-            ct);
-
+        // The image is already stored — identify persisted it and returned this
+        // key; we just reference it here rather than re-uploading.
         GpsCoordinates? location = null;
         if (command.Latitude.HasValue && command.Longitude.HasValue)
             location = GpsCoordinates.Create(command.Latitude.Value, command.Longitude.Value);
@@ -41,7 +34,7 @@ internal sealed class CreateObservationCommandHandler
             command.SpeciesName,
             command.ScientificName,
             command.TopConfidence,
-            storageKey,
+            command.ImageStorageKey,
             location,
             null,
             command.Notes);
@@ -52,6 +45,6 @@ internal sealed class CreateObservationCommandHandler
             await _publisher.PublishAsync(evt, ct);
 
         return new CreateObservationResult(
-            obs.Id, obs.SpeciesName, storageKey, obs.ObservedAt);
+            obs.Id, obs.SpeciesName, command.ImageStorageKey, obs.ObservedAt);
     }
 }

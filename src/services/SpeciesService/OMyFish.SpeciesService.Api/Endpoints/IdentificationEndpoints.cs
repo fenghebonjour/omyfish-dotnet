@@ -19,10 +19,10 @@ public static class IdentificationEndpoints
 
             using var ms = new MemoryStream();
             await image.CopyToAsync(ms, ct);
-            var imageBase64 = Convert.ToBase64String(ms.ToArray());
+            var imageBytes = ms.ToArray();
 
             var userId = GetUserIdFromClaims(ctx);
-            var command = new IdentifyFishCommand(imageBase64, topK, userId);
+            var command = new IdentifyFishCommand(imageBytes, image.FileName, image.ContentType, topK, userId);
             try
             {
                 var result = await mediator.Send(command, ct);

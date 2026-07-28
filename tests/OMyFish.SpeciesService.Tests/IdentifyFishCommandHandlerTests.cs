@@ -11,19 +11,24 @@ namespace OMyFish.SpeciesService.Tests;
 public class IdentifyFishCommandHandlerTests
 {
     private readonly IAIServiceClient _ai = Substitute.For<IAIServiceClient>();
+    private readonly IStorageService _storage = Substitute.For<IStorageService>();
     private readonly ISpeciesRepository _repo = Substitute.For<ISpeciesRepository>();
     private readonly IMessagePublisher _publisher = Substitute.For<IMessagePublisher>();
     private readonly IdentifyFishCommandHandler _handler;
 
-    private static readonly IdentifyFishCommand Command = new("img/key.jpg", 3, Guid.NewGuid());
+    private static readonly byte[] ImageBytes = "test-image-bytes"u8.ToArray();
+    private static readonly string ImageBase64 = Convert.ToBase64String(ImageBytes);
+    private static readonly IdentifyFishCommand Command = new(ImageBytes, "fish.jpg", "image/jpeg", 3, Guid.NewGuid());
 
     public IdentifyFishCommandHandlerTests()
     {
-        _handler = new IdentifyFishCommandHandler(_ai, _repo, _publisher);
+        _storage.UploadAsync(Arg.Any<Stream>(), "fish.jpg", "image/jpeg", Arg.Any<CancellationToken>())
+            .Returns("identify/some-guid/fish.jpg");
+        _handler = new IdentifyFishCommandHandler(_ai, _storage, _repo, _publisher);
     }
 
     private void AiReturns(params AIPrediction[] predictions) =>
-        _ai.PredictAsync("img/key.jpg", 3, Arg.Any<CancellationToken>())
+        _ai.PredictAsync(ImageBase64, 3, Arg.Any<CancellationToken>())
             .Returns(new AIServiceResult(predictions, IsFish: predictions.Length > 0));
 
     [Fact]
@@ -99,7 +104,7 @@ public class IdentifyFishCommandHandlerTests
     public async Task Handle_NotAFish_RejectsWithoutTouchingCatalogOrPublishing()
     {
         // Edge case: a cat photo — the AI service's CLIP gate rejects it upstream.
-        _ai.PredictAsync("img/key.jpg", 3, Arg.Any<CancellationToken>())
+        _ai.PredictAsync(ImageBase64, 3, Arg.Any<CancellationToken>())
             .Returns(new AIServiceResult(Array.Empty<AIPrediction>(), IsFish: false));
 
         var result = await _handler.Handle(Command, CancellationToken.None);

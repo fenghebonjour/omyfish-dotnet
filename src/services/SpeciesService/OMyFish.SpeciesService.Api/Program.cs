@@ -8,6 +8,7 @@ using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Minio;
 using OMyFish.SpeciesService.Application.Commands;
 using OMyFish.SpeciesService.Application.Interfaces;
 using OMyFish.SpeciesService.Api.Endpoints;
@@ -16,6 +17,7 @@ using OMyFish.SpeciesService.Infrastructure.ExternalServices;
 using OMyFish.SpeciesService.Infrastructure.Messaging;
 using OMyFish.SpeciesService.Infrastructure.Persistence;
 using OMyFish.SpeciesService.Infrastructure.Repositories;
+using OMyFish.SpeciesService.Infrastructure.Storage;
 using OMyFish.Shared.BuildingBlocks.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,6 +43,22 @@ builder.Services.AddHttpClient<IAIServiceClient, AIServiceClient>(client =>
         builder.Configuration["AIService__BaseUrl"]
         ?? builder.Configuration["AIService:BaseUrl"]
         ?? "http://ai-service:8000"));
+
+// Object storage (identify persists the image and returns a real storage key)
+var minioEndpoint = builder.Configuration["MinIO__Endpoint"]
+                 ?? builder.Configuration["MinIO:Endpoint"]
+                 ?? "minio:9000";
+var minioAccess = builder.Configuration["MinIO__AccessKey"]
+               ?? builder.Configuration["MinIO:AccessKey"] ?? "minioadmin";
+var minioSecret = builder.Configuration["MinIO__SecretKey"]
+               ?? builder.Configuration["MinIO:SecretKey"] ?? "minioadmin";
+
+builder.Services.AddSingleton<IMinioClient>(_ =>
+    new MinioClient()
+        .WithEndpoint(minioEndpoint)
+        .WithCredentials(minioAccess, minioSecret)
+        .Build());
+builder.Services.AddScoped<IStorageService, MinIOStorageService>();
 
 // Messaging
 builder.Services.AddScoped<IMessagePublisher, RabbitMQPublisher>();

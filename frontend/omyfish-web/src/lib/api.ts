@@ -81,7 +81,7 @@ export interface NotificationDto {
 }
 
 export interface TokenResponse {
-  accessToken: string;
+  token: string;
   refreshToken: string;
   userId: string;
   email: string;

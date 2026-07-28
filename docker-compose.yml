@@ -153,6 +153,9 @@ services:
       RabbitMq__Username: omyfish
       RabbitMq__Password: omyfish_dev
       AIService__BaseUrl: "http://ai-service:8000"
+      MinIO__Endpoint: "minio:9000"
+      MinIO__AccessKey: omyfish
+      MinIO__SecretKey: omyfish_dev
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       Seeding__MetadataPath: "/metadata/fish_info.json"
     volumes:

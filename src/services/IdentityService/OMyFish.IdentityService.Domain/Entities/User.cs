@@ -8,7 +8,7 @@ public sealed class User
     public string Email { get; private set; } = default!;
     public string HashedPassword { get; private set; } = default!;
     public string? DisplayName { get; private set; }
-    public string Role { get; private set; } = "user";
+    public string Role { get; private set; } = "USER";
     public bool IsActive { get; private set; } = true;
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
@@ -21,7 +21,7 @@ public sealed class User
             Email = email.ToLowerInvariant().Trim(),
             HashedPassword = hashedPassword,
             DisplayName = displayName,
-            Role = "user",
+            Role = "USER",
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,

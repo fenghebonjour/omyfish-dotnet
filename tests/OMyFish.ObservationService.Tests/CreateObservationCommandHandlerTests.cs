@@ -11,20 +11,17 @@ namespace OMyFish.ObservationService.Tests;
 public class CreateObservationCommandHandlerTests
 {
     private readonly IObservationRepository _repo = Substitute.For<IObservationRepository>();
-    private readonly IStorageService _storage = Substitute.For<IStorageService>();
     private readonly IMessagePublisher _publisher = Substitute.For<IMessagePublisher>();
     private readonly CreateObservationCommandHandler _handler;
 
     public CreateObservationCommandHandlerTests()
     {
-        _handler = new CreateObservationCommandHandler(_repo, _storage, _publisher);
-        _storage.UploadAsync(Arg.Any<Stream>(), "fish.jpg", "image/jpeg", Arg.Any<CancellationToken>())
-            .Returns("stored/fish.jpg");
+        _handler = new CreateObservationCommandHandler(_repo, _publisher);
     }
 
     private static CreateObservationCommand Command(double? lat = null, double? lon = null) =>
         new(Guid.NewGuid(), "Walleye", "Sander vitreus", 0.91,
-            new MemoryStream([1, 2, 3]), "fish.jpg", "image/jpeg", lat, lon, null);
+            "stored/fish.jpg", lat, lon, null);
 
     [Fact]
     public async Task Handle_UploadsImageAndSavesObservation()
