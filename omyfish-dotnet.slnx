@@ -6,6 +6,7 @@
   </Folder>
   <Folder Name="/src/services/IdentityService/">
     <Project Path="src/services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj" />
+    <Project Path="src/services/IdentityService/OMyFish.IdentityService.Application/OMyFish.IdentityService.Application.csproj" />
     <Project Path="src/services/IdentityService/OMyFish.IdentityService.Domain/OMyFish.IdentityService.Domain.csproj" />
     <Project Path="src/services/IdentityService/OMyFish.IdentityService.Infrastructure/OMyFish.IdentityService.Infrastructure.csproj" />
   </Folder>
@@ -30,6 +31,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OMyFish.IdentityService.Tests/OMyFish.IdentityService.Tests.csproj" />
+    <Project Path="tests/OMyFish.NotificationService.Tests/OMyFish.NotificationService.Tests.csproj" />
     <Project Path="tests/OMyFish.ObservationService.Tests/OMyFish.ObservationService.Tests.csproj" />
     <Project Path="tests/OMyFish.SpeciesService.Tests/OMyFish.SpeciesService.Tests.csproj" />
   </Folder>

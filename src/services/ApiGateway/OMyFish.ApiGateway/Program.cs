@@ -42,11 +42,17 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
+// Restricted to the known frontend origin — auth uses a Bearer token (not
+// cookies), so credentials aren't needed here, matching Java's gateway CORS
+// posture instead of a wildcard-origin+credentials policy.
+var allowedOrigin = builder.Configuration["Cors__AllowedOrigin"]
+                 ?? builder.Configuration["Cors:AllowedOrigin"]
+                 ?? "http://localhost:3000";
+
 builder.Services.AddCors(opts => opts.AddDefaultPolicy(policy => policy
-    .SetIsOriginAllowed(_ => true)
+    .WithOrigins(allowedOrigin)
     .AllowAnyMethod()
-    .AllowAnyHeader()
-    .AllowCredentials()));
+    .AllowAnyHeader()));
 
 var app = builder.Build();
 

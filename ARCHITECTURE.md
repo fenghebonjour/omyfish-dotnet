@@ -248,7 +248,7 @@ DELETE /api/v1/observations/{id}
 POST /api/v1/auth/register   { email, password, displayName }
 POST /api/v1/auth/login      { email, password } → { token, refreshToken, userId, email, role }
 POST /api/v1/auth/refresh    { refreshToken }
-POST /api/v1/auth/api-keys   → { apiKey }
+POST /api/v1/users/{userId}/api-keys  → { keyId, plainKey, name }
 GET  /api/v1/auth/me
 ```
 
@@ -262,19 +262,17 @@ PUT /api/v1/notifications/{id}/read    → mark one as read
 
 ```
 Client
-  │── Bearer JWT (RS256) ──► YARP Gateway
-                                  │
-                                  ├── validates JWT signature (identity-service public key)
-                                  ├── enforces rate limits (per IP + per userId)
-                                  ├── injects X-User-Id, X-User-Roles headers
-                                  ├── validates API keys (hashed in DB)
+  │── Bearer JWT (HMAC-signed, shared secret) ──► YARP Gateway
                                   │
                                   ▼ forwards to downstream service
-                            service receives pre-validated identity headers
-                            (no re-validation needed downstream)
+                     (no gateway-level auth enforcement or header
+                      injection — CORS-restricted to the frontend
+                      origin, then each service independently
+                      validates the JWT itself via AddJwtBearer)
 
-OAuth2/OIDC: ASP.NET Core Identity with OpenIddict (Phase 5)
-API Keys: SHA-256 hashed, stored in identity DB, checked in gateway middleware
+API Keys: BCrypt-hashed, stored in identity DB. Issuance only
+(POST /api/v1/users/{userId}/api-keys) — request-time API-key
+validation middleware is not implemented yet, in either stack.
 ```
 
 ## Observability
@@ -397,7 +395,7 @@ Namespace: omyfish
 - [ ] OpenTelemetry sampling rate configured (10% in prod)
 - [ ] .NET Native AOT build tested for all services
 - [ ] HPA validated under k6 ramp test (target: 1K RPS on species-service)
-- [ ] CORS restricted to known origins
+- [x] CORS restricted to known origins
 - [ ] Serilog Seq / ELK sink configured for log aggregation
 - [ ] Secret rotation documented (JWT keys, DB passwords, S3 keys)
 - [ ] Database backup + restore runbook tested

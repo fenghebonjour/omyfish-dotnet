@@ -23,4 +23,10 @@ public class UserRepository : IUserRepository
         await _db.SaveChangesAsync(ct);
         return user;
     }
+
+    public Task<int> CountAsync(CancellationToken ct = default)
+        => _db.Users.CountAsync(ct);
+
+    public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken ct = default)
+        => await _db.Users.AsNoTracking().ToListAsync(ct);
 }

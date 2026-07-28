@@ -10,9 +10,9 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.4" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\services\IdentityService\OMyFish.IdentityService.Domain\OMyFish.IdentityService.Domain.csproj" />
-    <ProjectReference Include="..\..\src\services\IdentityService\OMyFish.IdentityService.Application\OMyFish.IdentityService.Application.csproj" />
+    <ProjectReference Include="..\..\src\services\NotificationService\OMyFish.NotificationService\OMyFish.NotificationService.csproj" />
   </ItemGroup>
 </Project>

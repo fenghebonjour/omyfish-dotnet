@@ -8,8 +8,10 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.4" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Stripe.net" Version="52.1.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OMyFish.IdentityService.Domain\OMyFish.IdentityService.Domain.csproj" />
+    <ProjectReference Include="..\OMyFish.IdentityService.Application\OMyFish.IdentityService.Application.csproj" />
   </ItemGroup>
 </Project>

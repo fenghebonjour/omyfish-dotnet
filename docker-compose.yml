@@ -220,10 +220,10 @@ services:
       Services__Observation: "http://observation-service:8080"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     depends_on:
-      - identity-service
-      - species-service
-      - observation-service
-      - notification-service
+      identity-service: { condition: service_healthy }
+      species-service: { condition: service_healthy }
+      observation-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
     networks: [omyfish-net]
 
   # ─── Frontend ─────────────────────────────────────────────────────────────
@@ -236,5 +236,6 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: "http://localhost:8080"
-    depends_on: [api-gateway]
+    depends_on:
+      api-gateway: { condition: service_healthy }
     networks: [omyfish-net]

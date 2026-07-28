@@ -8,8 +8,11 @@ using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OMyFish.IdentityService.Application;
+using OMyFish.IdentityService.Application.Interfaces;
 using OMyFish.IdentityService.Domain.Entities;
 using OMyFish.IdentityService.Domain.Interfaces;
+using OMyFish.IdentityService.Infrastructure.Payments;
 using OMyFish.IdentityService.Infrastructure.Persistence;
 using OMyFish.IdentityService.Infrastructure.Repositories;
 
@@ -24,16 +27,19 @@ builder.Services.AddDbContext<IdentityDbContext>(opts =>
     opts.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
+builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
 
 // ── Stripe (test keys) — billing endpoints return 503 until configured ────────
-var stripeSecretKey = builder.Configuration["Stripe__SecretKey"] ?? "";
-var stripeWebhookSecret = builder.Configuration["Stripe__WebhookSecret"] ?? "";
-var stripePrices = new Dictionary<string, string>
-{
-    ["monthly"] = builder.Configuration["Stripe__PriceMonthly"] ?? "",  // 5 CAD/month
-    ["yearly"] = builder.Configuration["Stripe__PriceYearly"] ?? "",    // 29 CAD/year
-};
-var appBaseUrl = builder.Configuration["App__BaseUrl"] ?? "http://localhost:3000";
+builder.Services.AddSingleton<IPaymentGateway>(_ => new StripePaymentGateway(
+    secretKey: builder.Configuration["Stripe__SecretKey"] ?? "",
+    webhookSecret: builder.Configuration["Stripe__WebhookSecret"] ?? "",
+    prices: new Dictionary<string, string>
+    {
+        ["monthly"] = builder.Configuration["Stripe__PriceMonthly"] ?? "",  // 5 CAD/month
+        ["yearly"] = builder.Configuration["Stripe__PriceYearly"] ?? "",    // 29 CAD/year
+    },
+    appBaseUrl: builder.Configuration["App__BaseUrl"] ?? "http://localhost:3000"));
+builder.Services.AddScoped<BillingService>();
 
 // ── JWT ───────────────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt__Secret"] ?? builder.Configuration["Jwt:Secret"];
@@ -170,130 +176,94 @@ app.MapGet("/api/v1/auth/me", async (ClaimsPrincipal principal, IUserRepository 
         Results.Ok(new UserDto(user.Id, user.Email, user.DisplayName, user.Role));
 }).RequireAuthorization();
 
+app.MapPost("/api/v1/users/{userId:guid}/api-keys", async (
+    Guid userId, ApiKeyRequest req, IUserRepository users, IApiKeyRepository apiKeys) =>
+{
+    if (await users.FindByIdAsync(userId) is null) return Results.NotFound();
+
+    var raw = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    var plainKey = "omf_" + Convert.ToBase64String(raw).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    var keyHash = BCrypt.Net.BCrypt.HashPassword(plainKey);
+
+    var apiKey = ApiKey.Create(userId, keyHash, req.Name);
+    await apiKeys.CreateAsync(apiKey);
+
+    return Results.Created($"/api/v1/users/{userId}/api-keys/{apiKey.Id}",
+        new ApiKeyResponse(apiKey.Id, plainKey, apiKey.Name));
+}).RequireAuthorization();
+
 // ── Billing ───────────────────────────────────────────────────────────────────
 
-app.MapGet("/api/v1/billing/me", async (ClaimsPrincipal principal, ISubscriptionRepository subs) =>
+app.MapGet("/api/v1/billing/me", async (ClaimsPrincipal principal, BillingService billing) =>
 {
     if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
         return Results.Unauthorized();
-    var sub = await subs.FindByUserIdAsync(userId);
-    if (sub is null)
-    {
-        sub = Subscription.StartTrial(userId);
-        await subs.CreateAsync(sub);
-    }
+    var sub = await billing.MySubscriptionAsync(userId);
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
 }).RequireAuthorization();
 
 app.MapPost("/api/v1/billing/checkout", async (
-    CheckoutRequest req, ClaimsPrincipal principal, IUserRepository users) =>
+    CheckoutRequest req, ClaimsPrincipal principal, BillingService billing) =>
 {
-    if (!stripePrices.TryGetValue(req.Plan, out var priceId))
-        return Results.BadRequest(new { error = "plan must be monthly or yearly" });
-    if (string.IsNullOrEmpty(stripeSecretKey) || string.IsNullOrEmpty(priceId))
-        return Results.Problem("Stripe is not configured.", statusCode: 503);
-
     if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
         return Results.Unauthorized();
-    var user = await users.FindByIdAsync(userId);
-    if (user is null) return Results.NotFound();
-
-    var options = new Stripe.Checkout.SessionCreateOptions
+    try
     {
-        Mode = "subscription",
-        CustomerEmail = user.Email,
-        ClientReferenceId = userId.ToString(),
-        LineItems = [new() { Price = priceId, Quantity = 1 }],
-        SuccessUrl = $"{appBaseUrl}/account?billing=success",
-        CancelUrl = $"{appBaseUrl}/account?billing=canceled",
-        Metadata = new() { ["user_id"] = userId.ToString(), ["plan"] = req.Plan },
-    };
-    var session = await new Stripe.Checkout.SessionService(
-        new Stripe.StripeClient(stripeSecretKey)).CreateAsync(options);
-    return Results.Ok(new { checkoutUrl = session.Url });
+        var checkoutUrl = await billing.CheckoutUrlAsync(userId, req.Plan);
+        return checkoutUrl is null
+            ? Results.Problem("Stripe is not configured.", statusCode: 503)
+            : Results.Ok(new { checkoutUrl });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.NotFound();
+    }
 }).RequireAuthorization();
 
-app.MapPost("/api/v1/billing/webhook", async (HttpRequest request, ISubscriptionRepository subs) =>
+app.MapPost("/api/v1/billing/webhook", async (
+    HttpRequest request, IPaymentGateway payments, BillingService billing) =>
 {
-    if (string.IsNullOrEmpty(stripeWebhookSecret))
+    if (!payments.IsConfigured)
         return Results.Problem("Stripe webhook is not configured.", statusCode: 503);
 
     var payload = await new StreamReader(request.Body).ReadToEndAsync();
-    Stripe.Event stripeEvent;
-    try
-    {
-        stripeEvent = Stripe.EventUtility.ConstructEvent(
-            payload, request.Headers["Stripe-Signature"], stripeWebhookSecret);
-    }
-    catch { return Results.BadRequest(new { error = "Invalid webhook signature" }); }
+    var evt = payments.VerifyWebhook(payload, request.Headers["Stripe-Signature"]!);
+    if (evt is null)
+        return Results.BadRequest(new { error = "Invalid webhook signature" });
 
-    switch (stripeEvent.Type)
-    {
-        case "checkout.session.completed":
-        {
-            var session = (Stripe.Checkout.Session)stripeEvent.Data.Object;
-            if (Guid.TryParse(session.ClientReferenceId, out var userId))
-            {
-                var sub = await subs.FindByUserIdAsync(userId);
-                if (sub is null) { sub = Subscription.StartTrial(userId); await subs.CreateAsync(sub); }
-                sub.Activate(
-                    session.Metadata.GetValueOrDefault("plan", "monthly"),
-                    periodEnd: null,  // authoritative period end arrives on subscription.updated
-                    stripeCustomerId: session.CustomerId,
-                    stripeSubscriptionId: session.SubscriptionId);
-                await subs.SaveChangesAsync();
-            }
-            break;
-        }
-        case "customer.subscription.updated":
-        case "customer.subscription.deleted":
-        {
-            var stripeSub = (Stripe.Subscription)stripeEvent.Data.Object;
-            var sub = await subs.FindByStripeCustomerIdAsync(stripeSub.CustomerId);
-            if (sub is not null)
-            {
-                if (stripeEvent.Type == "customer.subscription.deleted"
-                    || stripeSub.Status is "canceled" or "unpaid")
-                    sub.Cancel();
-                else
-                    sub.Activate(sub.Plan ?? "monthly",
-                        stripeSub.Items?.Data?.FirstOrDefault()?.CurrentPeriodEnd,
-                        stripeSubscriptionId: stripeSub.Id);
-                await subs.SaveChangesAsync();
-            }
-            break;
-        }
-    }
-    return Results.Ok(new { handled = true });
+    var handled = await billing.ApplyEventAsync(evt);
+    return Results.Ok(new { handled });
 });
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
-app.MapGet("/api/v1/admin/stats", async (
-    ISubscriptionRepository subs, IdentityDbContext db) =>
+app.MapGet("/api/v1/admin/stats", async (BillingService billing) =>
 {
-    var userCount = await db.Users.CountAsync();
-    var all = await subs.GetAllAsync();
-    var byStatus = all.GroupBy(s => s.EffectiveStatus)
-        .ToDictionary(g => g.Key, g => g.Count());
-    var activeMonthly = all.Count(s => s.EffectiveStatus == "active" && s.Plan == "monthly");
-    var activeYearly = all.Count(s => s.EffectiveStatus == "active" && s.Plan == "yearly");
+    var stats = await billing.StatsAsync();
     return Results.Ok(new
     {
-        users = userCount,
-        subscriptions = byStatus,
-        activePlans = new { monthly = activeMonthly, yearly = activeYearly },
-        mrrCad = Math.Round(activeMonthly * 5 + activeYearly * 29 / 12.0, 2),
+        users = stats.Users,
+        subscriptions = new
+        {
+            trialing = stats.Trialing,
+            active = stats.Active,
+            canceled = stats.Canceled,
+            expired = stats.Expired,
+        },
+        activePlans = new { monthly = stats.ActiveMonthly, yearly = stats.ActiveYearly },
+        mrrCad = stats.MrrCad,
     });
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
-app.MapGet("/api/v1/admin/subscriptions", async (
-    ISubscriptionRepository subs, IdentityDbContext db) =>
+app.MapGet("/api/v1/admin/subscriptions", async (BillingService billing) =>
 {
-    var all = await subs.GetAllAsync();
-    var emails = await db.Users.AsNoTracking()
-        .ToDictionaryAsync(u => u.Id, u => u.Email);
+    var all = await billing.AllSubscriptionsAsync();
+    var emails = await billing.UserEmailsAsync();
     return Results.Ok(all.Select(s => new
     {
         s.UserId,
@@ -306,34 +276,26 @@ app.MapGet("/api/v1/admin/subscriptions", async (
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/grant", async (
-    Guid userId, GrantRequest? req, ISubscriptionRepository subs) =>
+    Guid userId, GrantRequest? req, BillingService billing) =>
 {
-    var sub = await subs.FindByUserIdAsync(userId);
-    if (sub is null) { sub = Subscription.StartTrial(userId); await subs.CreateAsync(sub); }
-    sub.Activate(req?.Plan ?? "yearly", DateTime.UtcNow.AddDays(req?.Days ?? 365));
-    await subs.SaveChangesAsync();
+    var sub = await billing.GrantAsync(userId, req?.Plan ?? "yearly", req?.Days ?? 365);
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/revoke", async (
-    Guid userId, ISubscriptionRepository subs) =>
+    Guid userId, BillingService billing) =>
 {
-    var sub = await subs.FindByUserIdAsync(userId);
+    var sub = await billing.RevokeAsync(userId);
     if (sub is null) return Results.NotFound();
-    sub.Cancel();
-    await subs.SaveChangesAsync();
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/extend-trial", async (
-    Guid userId, GrantRequest? req, ISubscriptionRepository subs) =>
+    Guid userId, GrantRequest? req, BillingService billing) =>
 {
-    var sub = await subs.FindByUserIdAsync(userId);
-    if (sub is null) { sub = Subscription.StartTrial(userId); await subs.CreateAsync(sub); }
-    sub.ExtendTrial(req?.Days ?? 7);
-    await subs.SaveChangesAsync();
+    var sub = await billing.ExtendTrialAsync(userId, req?.Days ?? 7);
     return Results.Ok(new SubscriptionDto(
         sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
@@ -380,3 +342,5 @@ record LoginRequest(string Email, string Password);
 record RefreshRequest(string RefreshToken);
 record TokenResponse(string Token, string RefreshToken, Guid UserId, string Email, string Role);
 record UserDto(Guid Id, string Email, string? DisplayName, string Role);
+record ApiKeyRequest(string Name);
+record ApiKeyResponse(Guid KeyId, string PlainKey, string Name);
