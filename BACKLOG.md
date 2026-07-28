@@ -8,9 +8,13 @@ just .NET's slice of it.
 
 ---
 
-## [ ] A1 — Contract alignment: auth field/role naming + real image storage on identify
+## [x] A1 — Contract alignment: auth field/role naming + real image storage on identify
 
-**Status:** NOT STARTED. Blocks the frontend unification work (Workstream C).
+**Status:** DONE (2026-07-28, commit bc91d33). All three pieces landed and
+verified (41 tests green): token/role rename, real MinIO upload wired into
+species-service's identify, and observation-create switched to the JSON
+imageStorageKey body. Frontend's api.ts/AuthContext/FishUploader updated to
+match. Still blocks Workstream C until B and the other repos' A1 land too.
 
 Family-wide decision: keep Java's field names/casing, adopt .NET's `/api/v1/...`
 versioning everywhere (.NET already does this — no route changes needed here).
@@ -31,9 +35,16 @@ versioning everywhere (.NET already does this — no route changes needed here).
 
 ---
 
-## [ ] A2 — Port features Java already has, plus real bugs found
+## [x] A2 — Port features Java already has, plus real bugs found
 
-**Status:** NOT STARTED.
+**Status:** MOSTLY DONE (2026-07-28, commit 1366a81). API-key endpoint, CORS
+fix, ARCHITECTURE.md doc corrections, BillingService extraction (+15 new
+tests), OMyFish.NotificationService.Tests (+2 tests), Docker healthchecks, and
+the observation-service HPA manifest all landed. **Not done**: full
+`WebApplicationFactory`-based HTTP-level slice tests for auth/observations/
+notifications — scoped out because it needs either Testcontainers or careful
+per-service MassTransit hosted-service mocking, a bigger separate lift. Left
+as a follow-up below.
 
 - API-key issuance: port Java's `AuthController` `POST /api/v1/users/{userId}
   /api-keys` + `CreateApiKeyUseCase` (the `ApiKey` entity already exists here,
@@ -65,15 +76,21 @@ versioning everywhere (.NET already does this — no route changes needed here).
 
 ---
 
-## [ ] B — Proxy the Quebec Regs Advisor feature
+## [x] B — Proxy the Quebec Regs Advisor feature
 
-**Status:** NOT STARTED. Depends on nothing here (routes already versioned).
+**Status:** DONE (2026-07-28, commit 16f8ed7). Implemented at
+`/api/v1/species/regs/*` — **corrected from this file's original
+`/api/v1/regs/*`**: species-service's YARP route only catches
+`/api/v1/species/**`, and bite-score is already nested the same way, so this
+avoids any gateway config change. Same correction applies to Java's and
+python-web's BACKLOG entries.
 
-All chatbot/retrieval logic lives in `omyfish-ai` (frozen) at `/regs/*`
-(`GET /limits`, `GET /zones/geojson`, `GET /consumption/stations`,
-`GET /consumption`, `POST /ask`). Add a thin proxy in SpeciesService —
-`RegsEndpoints.cs` under `/api/v1/regs/*` — registered in the YARP gateway
-route config.
+## [ ] Follow-up — WebApplicationFactory HTTP-level slice tests
+
+**Status:** NOT STARTED. Deferred out of A2 (see above). Needs either
+Testcontainers.PostgreSql or per-service MassTransit hosted-service mocking to
+avoid hitting real Postgres/RabbitMQ in tests — worth a dedicated session
+rather than folding into the family-alignment pass.
 
 ---
 
