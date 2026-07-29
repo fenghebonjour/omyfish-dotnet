@@ -94,16 +94,17 @@ rather than folding into the family-alignment pass.
 
 ---
 
-## [ ] C — Frontend: source of truth for the unified baseline
+## [x] C — Frontend: source of truth for the unified baseline
 
-**Status:** NOT STARTED. This repo's frontend was independently identified as
-the more current/complete of the three (AuthContext, namespaced api client,
-dedicated /register page, abstracted ObservationMap) — it becomes the baseline
-copied into Java and python-web, after two adjustments here:
+**Status:** DONE (2026-07-29, commits d41bd47 + 7573a5a). The two A1
+adjustments (token/role naming, imageStorageKey JSON body) were already in
+place from A1 itself, so this was just: add the Regs Advisor UI (new `/regs`
+chat page, two info cards on `FishUploader.tsx`, toggle-able zones/stations
+overlay on `ObservationMap.tsx`), bump Next.js 15.1.0 → 15.5.22 (fixes a
+critical RCE + ~15 other CVEs, done here since this frontend was about to be
+copied into two more repos), then sync verbatim into `omyfish-java` and
+`omyfish-python-web`. Verified with a real `next build` in all three repos and
+a `diff -rq` confirming all three are byte-identical.
 
-- `src/lib/api.ts` + `AuthContext.tsx`: revert to `token`/`refreshToken`/
-  uppercase role (not `accessToken`/lowercase) per the A1 decision.
-- `FishUploader.tsx`: change the save-observation call to send `imageStorageKey`
-  in a JSON body instead of building multipart form data, per A1.
-- Add the Regs Advisor UI once B lands: chat panel, identify-result info cards,
-  zones/stations map layer — then it ships to all three frontends when copied.
+**All workstreams for this repo are now complete** (aside from the
+WebApplicationFactory slice-test follow-up noted above).
