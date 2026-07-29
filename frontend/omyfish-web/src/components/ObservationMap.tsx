@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { RegsStation } from "@/lib/api";
 
 interface MapMarker {
   lat: number;
@@ -13,6 +14,10 @@ interface MapMarker {
 interface ObservationMapProps {
   markers: MapMarker[];
   height?: string;
+  // Quebec fishing zone polygons + consumption-advisory stations — optional,
+  // toggle-able overlay.
+  zonesGeoJson?: GeoJSON.FeatureCollection;
+  stations?: RegsStation[];
 }
 
 function buildPopup(m: MapMarker): HTMLElement {
@@ -41,9 +46,15 @@ function buildPopup(m: MapMarker): HTMLElement {
   return el;
 }
 
-export function ObservationMap({ markers, height = "300px" }: ObservationMapProps) {
+export function ObservationMap({
+  markers,
+  height = "300px",
+  zonesGeoJson,
+  stations,
+}: ObservationMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<unknown>(null);
+  const regsLayerRef = useRef<unknown>(null);
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -106,6 +117,43 @@ export function ObservationMap({ markers, height = "300px" }: ObservationMapProp
       }
     });
   }, [markers]);
+
+  // Quebec fishing zones + consumption-advisory stations — a toggle-able
+  // overlay, added/removed reactively as a single layer group.
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    import("leaflet").then((L) => {
+      const map = mapInstanceRef.current as ReturnType<typeof L.map>;
+      if (regsLayerRef.current) {
+        map.removeLayer(regsLayerRef.current as ReturnType<typeof L.layerGroup>);
+        regsLayerRef.current = null;
+      }
+      if (!zonesGeoJson && !stations?.length) return;
+
+      const group = L.layerGroup();
+      if (zonesGeoJson) {
+        L.geoJSON(zonesGeoJson, {
+          style: { color: "#2563eb", weight: 1, fillOpacity: 0.05 },
+          onEachFeature: (feature, layer) => {
+            const name = feature.properties?.zone_name ?? feature.properties?.name;
+            if (name) layer.bindTooltip(String(name));
+          },
+        }).addTo(group);
+      }
+      (stations ?? []).forEach((s) => {
+        L.circleMarker([s.latitude, s.longitude], {
+          radius: 5,
+          color: "#16a34a",
+          fillColor: "#16a34a",
+          fillOpacity: 0.8,
+        })
+          .bindTooltip(s.hydronyme)
+          .addTo(group);
+      });
+      group.addTo(map);
+      regsLayerRef.current = group;
+    });
+  }, [zonesGeoJson, stations]);
 
   return (
     <>

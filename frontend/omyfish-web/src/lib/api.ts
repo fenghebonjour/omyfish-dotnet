@@ -1,4 +1,7 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+// Default matches every backend's docker-compose gateway/origin port
+// (Java api-gateway, .NET api-gateway, Django) — this frontend is shared
+// verbatim across all three.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export interface PredictionDto {
   speciesName: string;
@@ -68,6 +71,52 @@ export interface BiteForecast {
   minorWindows: TimeWindow[]; // per day: windows around the next-2 peaks
   sunTimes: SunTimes[]; // per-day sunrise/sunset (drives the dawn/dusk score boost)
   current: CurrentConditions | null; // live nowcast for "right now" alerts
+}
+
+export interface RegsSpeciesLimit {
+  species: string;
+  period: string;
+  catchLimit: string;
+  lengthLimit?: string | null;
+  fishingDevice?: string | null;
+  note?: string | null;
+}
+
+export interface RegsLimits {
+  lat: number;
+  lon: number;
+  zoneName: string;
+  zoneInfoUrl?: string | null;
+  rules: RegsSpeciesLimit[];
+  disclaimer: string;
+}
+
+export interface RegsStation {
+  noBqma: string;
+  hydronyme: string;
+  latitude: number;
+  longitude: number;
+  distanceKm: number;
+}
+
+export interface RegsConsumption {
+  lat: number;
+  lon: number;
+  species: string;
+  stationName: string;
+  distanceKm: number;
+  sizeClass?: string | null;
+  mealsPerMonth?: number | null;
+  fishingStatus?: string | null;
+  note?: string | null;
+  disclaimer: string;
+}
+
+export interface RegsAskResponse {
+  question: string;
+  answer: string;
+  sources: string[];
+  disclaimer: string;
 }
 
 export interface NotificationDto {
@@ -187,6 +236,32 @@ export const api = {
     forecast: (lat: number, lon: number, species = "general", hours = 336) =>
       apiFetch<BiteForecast>(
         `/api/v1/species/bite-score/forecast?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}&hours=${hours}`),
+  },
+
+  // Quebec fishing regs/consumption advisor — proxied from omyfish-ai by
+  // every backend at the same path, chatbot/retrieval logic lives there only.
+  regs: {
+    limits: (lat: number, lon: number, species = "general") =>
+      apiFetch<RegsLimits>(
+        `/api/v1/species/regs/limits?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
+
+    zonesGeoJson: () =>
+      apiFetch<GeoJSON.FeatureCollection>("/api/v1/species/regs/zones/geojson"),
+
+    consumptionStations: (lat: number, lon: number, limit = 5) =>
+      apiFetch<RegsStation[]>(
+        `/api/v1/species/regs/consumption/stations?lat=${lat}&lon=${lon}&limit=${limit}`),
+
+    consumption: (lat: number, lon: number, species = "general") =>
+      apiFetch<RegsConsumption>(
+        `/api/v1/species/regs/consumption?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
+
+    ask: (question: string) =>
+      apiFetch<RegsAskResponse>("/api/v1/species/regs/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      }),
   },
 
   notifications: {

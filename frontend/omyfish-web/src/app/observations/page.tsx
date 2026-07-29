@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, ObservationDto } from "@/lib/api";
+import { api, ObservationDto, RegsStation } from "@/lib/api";
 import { ObservationMap } from "@/components/ObservationMap";
 import { BiteScorePanel } from "@/components/BiteScorePanel";
 
@@ -14,6 +14,9 @@ export default function ObservationsPage() {
   const [observations, setObservations] = useState<ObservationDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRegsLayer, setShowRegsLayer] = useState(false);
+  const [zonesGeoJson, setZonesGeoJson] = useState<GeoJSON.FeatureCollection>();
+  const [stations, setStations] = useState<RegsStation[]>();
 
   useEffect(() => {
     if (authLoading) return;
@@ -48,6 +51,20 @@ export default function ObservationsPage() {
       date: new Date(o.observedAt).toLocaleDateString(),
     }));
 
+  const toggleRegsLayer = async () => {
+    const next = !showRegsLayer;
+    setShowRegsLayer(next);
+    if (next && !zonesGeoJson) {
+      const first = mapMarkers[0];
+      const [zones, nearbyStations] = await Promise.all([
+        api.regs.zonesGeoJson(),
+        first ? api.regs.consumptionStations(first.lat, first.lng) : Promise.resolve([]),
+      ]);
+      setZonesGeoJson(zones);
+      setStations(nearbyStations);
+    }
+  };
+
   if (loading) return <div className="text-center py-16 text-gray-400">Loading observations…</div>;
 
   return (
@@ -63,7 +80,17 @@ export default function ObservationsPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">{error}</div>
       )}
 
-      <ObservationMap markers={mapMarkers} height="300px" />
+      <label className="flex items-center gap-2 text-sm text-gray-600">
+        <input type="checkbox" checked={showRegsLayer} onChange={toggleRegsLayer} />
+        Show Quebec fishing zones &amp; consumption-advisory stations
+      </label>
+
+      <ObservationMap
+        markers={mapMarkers}
+        height="300px"
+        zonesGeoJson={showRegsLayer ? zonesGeoJson : undefined}
+        stations={showRegsLayer ? stations : undefined}
+      />
 
       {observations.length === 0 ? (
         <div className="text-center py-16 text-gray-400">

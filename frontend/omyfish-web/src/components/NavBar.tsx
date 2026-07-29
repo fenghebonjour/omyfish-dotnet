@@ -28,6 +28,9 @@ export function NavBar() {
           <Link href="/" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
             Identify
           </Link>
+          <Link href="/regs" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+            Regs &amp; Tips
+          </Link>
           {isAuthenticated && (
             <>
               <Link href="/observations" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">

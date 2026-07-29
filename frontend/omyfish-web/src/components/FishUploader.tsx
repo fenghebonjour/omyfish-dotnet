@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { useAuth } from "@/contexts/AuthContext";
+import { api, type RegsLimits, type RegsConsumption } from "@/lib/api";
 import exifr from "exifr";
 
 interface PredictionDto {
@@ -36,6 +37,9 @@ export function FishUploader() {
   const [saving, setSaving] = useState(false);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
+  const [regsLimits, setRegsLimits] = useState<RegsLimits | null>(null);
+  const [regsConsumption, setRegsConsumption] = useState<RegsConsumption | null>(null);
+  const [regsLoading, setRegsLoading] = useState(false);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -47,6 +51,8 @@ export function FishUploader() {
     setSaved(false);
     setLat("");
     setLng("");
+    setRegsLimits(null);
+    setRegsConsumption(null);
     setLoading(true);
 
     try {
@@ -105,6 +111,23 @@ export function FishUploader() {
       setLoading(false);
     }
   }, [token]);
+
+  // lat/lng resolve asynchronously (EXIF, then geolocation fallback) after
+  // the identify result lands, so fetch regs info once both are available.
+  useEffect(() => {
+    if (!result || result.isFish === false || !lat || !lng) return;
+    const species = result.predictions[0]?.speciesName;
+    if (!species) return;
+    setRegsLoading(true);
+    Promise.allSettled([
+      api.regs.limits(Number(lat), Number(lng), species),
+      api.regs.consumption(Number(lat), Number(lng), species),
+    ]).then(([limitsResult, consumptionResult]) => {
+      setRegsLimits(limitsResult.status === "fulfilled" ? limitsResult.value : null);
+      setRegsConsumption(consumptionResult.status === "fulfilled" ? consumptionResult.value : null);
+      setRegsLoading(false);
+    });
+  }, [result, lat, lng]);
 
   const handleSave = async () => {
     if (!result || !token) return;
@@ -200,6 +223,13 @@ export function FishUploader() {
           {result.predictions.map((p) => (
             <PredictionCard key={p.rank} prediction={p} />
           ))}
+
+          {lat && lng && (regsLoading || regsLimits || regsConsumption) && (
+            <div className="grid grid-cols-2 gap-3">
+              <RegsLimitCard limits={regsLimits} loading={regsLoading} />
+              <RegsConsumptionCard consumption={regsConsumption} loading={regsLoading} />
+            </div>
+          )}
 
           {isAuthenticated && !saved && (
             <div className="flex flex-col gap-2">
@@ -305,6 +335,50 @@ function PredictionCard({ prediction }: { prediction: PredictionDto }) {
         <p className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-2 text-blue-800">
           💡 {prediction.funFact}
         </p>
+      )}
+    </div>
+  );
+}
+
+function RegsLimitCard({ limits, loading }: { limits: RegsLimits | null; loading: boolean }) {
+  const rule = limits?.rules[0];
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-1">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Daily Limit</p>
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : rule ? (
+        <>
+          <p className="text-sm font-semibold text-gray-900">{rule.catchLimit}</p>
+          {rule.lengthLimit && <p className="text-xs text-gray-500">{rule.lengthLimit}</p>}
+          <p className="text-xs text-gray-400">{limits?.zoneName}</p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">No data found</p>
+      )}
+    </div>
+  );
+}
+
+function RegsConsumptionCard({
+  consumption,
+  loading,
+}: {
+  consumption: RegsConsumption | null;
+  loading: boolean;
+}) {
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-1">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Safe to Eat</p>
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : consumption?.mealsPerMonth != null ? (
+        <>
+          <p className="text-sm font-semibold text-gray-900">{consumption.mealsPerMonth} meals/month</p>
+          <p className="text-xs text-gray-400">{consumption.distanceKm.toFixed(0)} km away</p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">No data found</p>
       )}
     </div>
   );
