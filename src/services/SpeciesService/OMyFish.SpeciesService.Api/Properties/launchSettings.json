@@ -10,7 +10,10 @@
         "AIService__BaseUrl": "http://localhost:8000",
         "RabbitMQ__Host": "localhost",
         "RabbitMQ__Username": "omyfish",
-        "RabbitMQ__Password": "omyfish_dev"
+        "RabbitMQ__Password": "omyfish_dev",
+        "MinIO__Endpoint": "localhost:9000",
+        "MinIO__AccessKey": "omyfish",
+        "MinIO__SecretKey": "omyfish_dev"
       },
       "applicationUrl": "https://localhost:56141;http://localhost:56144"
     }
