@@ -1,9 +1,9 @@
 # OMyFish — Enterprise .NET 10 Platform
 
-> **OMyFish — Your AI Fishing Companion.** *When, Where, What you catch.* AI fish identification, GPS-logged observations on a map, and a Bite Score timing forecast — built on .NET 10 + ASP.NET Core with Clean Architecture, CQRS (MediatR), and Event-Driven design.
+> **OMyFish — Your AI Fishing Companion.** *When, Where, What you catch.* A Bite Score timing forecast for **when** to fish, AI fish identification with GPS-logged observations on a map for **where** fish are being caught, and a Regs & Tips chatbot (powered by Groq) for **what** you can legally keep — built on .NET 10 + ASP.NET Core with Clean Architecture, CQRS (MediatR), and Event-Driven design.
 
 > [!NOTE]
-> **Repo reorganization (July 2026):** the OMyFish platform is split into four repos: [omyfish-python](https://github.com/fenghebonjour/omyfish-python) (the AI-first origin, previously named `omyfish` — the old link redirects there), [omyfish-ai](https://github.com/fenghebonjour/omyfish-ai) (standalone AI microservice shared by all), [omyfish-java](https://github.com/fenghebonjour/omyfish-java), and **omyfish-dotnet** (this one).
+> **Repo reorganization (July 2026):** the OMyFish platform is split into six repos: [omyfish-python](https://github.com/fenghebonjour/omyfish-python) (the AI-first origin, previously named `omyfish` — the old link redirects there — now kept in place for training the fish-ID model), [omyfish-ai](https://github.com/fenghebonjour/omyfish-ai) (standalone AI microservice shared by all), [omyfish-java](https://github.com/fenghebonjour/omyfish-java), **omyfish-dotnet** (this one), and the two newest siblings, [omyfish-python-web](https://github.com/fenghebonjour/omyfish-python-web) (Django, public) and omyfish-ios (SwiftUI, private).
 
 ## Stack
 
@@ -57,7 +57,7 @@ omyfish-dotnet/
       SpeciesService/          ← AI orchestration, CQRS, species KB
       ObservationService/      ← PostGIS, EXIF, GeoJSON, MinIO
       NotificationService/     ← notifications web API + MassTransit consumers
-      AIService/               ← builds from ../omyfish-ai (shared: fish ID + Bite Score)
+      AIService/               ← builds from ../omyfish-ai (shared: Bite Score + fish ID + Regs & Tips chatbot)
     shared/
       OMyFish.Shared.BuildingBlocks/   ← CQRS interfaces, AggregateRoot
       OMyFish.Shared.Contracts/        ← Integration events
