@@ -22,10 +22,10 @@ export function NavBar() {
         </Link>
 
         <nav className="flex items-center gap-4 ml-4 flex-1">
-          <Link href="/timing" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+          <Link href="/" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
             Timing
           </Link>
-          <Link href="/" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+          <Link href="/identify" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
             Identify
           </Link>
           <Link href="/regs" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">

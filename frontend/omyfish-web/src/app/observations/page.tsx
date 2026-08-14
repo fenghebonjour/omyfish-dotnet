@@ -71,7 +71,7 @@ export default function ObservationsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">My Observations</h1>
-        <Link href="/" className="text-sm text-blue-600 hover:underline">
+        <Link href="/identify" className="text-sm text-blue-600 hover:underline">
           + New identification
         </Link>
       </div>
@@ -95,7 +95,7 @@ export default function ObservationsPage() {
       {observations.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">No observations yet.</p>
-          <Link href="/" className="mt-2 inline-block text-blue-600 hover:underline text-sm">
+          <Link href="/identify" className="mt-2 inline-block text-blue-600 hover:underline text-sm">
             Identify a fish to get started
           </Link>
         </div>
