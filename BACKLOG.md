@@ -108,3 +108,32 @@ a `diff -rq` confirming all three are byte-identical.
 
 **All workstreams for this repo are now complete** (aside from the
 WebApplicationFactory slice-test follow-up noted above).
+
+---
+
+## [ ] E — Migrate species catalog persistence to MongoDB
+
+**Status:** NOT STARTED (added 2026-08-19). `omyfish-java` did this first
+(commit 36c0200, see its `BACKLOG.md` item E) — species catalog is
+read-mostly, flexible-schema reference data with no relational integrity
+needs, so it doesn't belong on Postgres. Port the same move here:
+
+- Replace `SpeciesDbContext` (EF Core + Npgsql,
+  `OMyFish.SpeciesService.Infrastructure/SpeciesDbContext.cs`) and
+  `SpeciesRepository.cs`'s EF-backed implementation of `ISpeciesRepository`
+  with a MongoDB.Driver-backed one — keep the same `ISpeciesRepository`
+  interface (`OMyFish.SpeciesService.Application/Interfaces/`) so
+  application/domain layers don't change.
+- `Species` entity (`OMyFish.SpeciesService.Domain/Entities/Species.cs`) has a
+  private `Species(Guid id)` constructor already — check whether the
+  EF-to-domain mapping today restores the persisted id correctly before
+  assuming it's fine; Java's equivalent bug (`toDomain()` minting a fresh
+  random id instead of restoring the persisted one) is worth explicitly
+  ruling out here, not assumed away.
+- Drop the species-service EF Core migration(s) for Postgres; add a `mongodb`
+  service to `docker-compose.yml` (mirror Java's: `mongo:7` image, root
+  user/pass env vars, healthcheck via `mongosh --eval`).
+- Remove `Npgsql`/EF-Postgres package refs from
+  `OMyFish.SpeciesService.Infrastructure.csproj`, add `MongoDB.Driver`.
+- Verify with this repo's test suite plus an end-to-end `docker compose up
+  --build` check, same as Java's verification pass.
