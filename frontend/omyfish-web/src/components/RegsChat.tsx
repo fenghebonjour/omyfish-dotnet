@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { api } from "@/lib/api";
+
+const markdownComponents: Components = {
+  p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+  ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-2 last:mb-0" {...props} />,
+  ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-2 last:mb-0" {...props} />,
+  li: ({ node, ...props }) => <li className="mb-0.5" {...props} />,
+  strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+  a: ({ node, ...props }) => <a className="underline" target="_blank" rel="noreferrer" {...props} />,
+};
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -59,7 +69,11 @@ export function RegsChat() {
                   : "bg-gray-100 text-gray-900"
               }`}
             >
-              <p>{m.text}</p>
+              {m.role === "assistant" ? (
+                <ReactMarkdown components={markdownComponents}>{m.text}</ReactMarkdown>
+              ) : (
+                <p>{m.text}</p>
+              )}
               {m.sources && m.sources.length > 0 && (
                 <p className="mt-1 text-xs opacity-70">Sources: {m.sources.join(", ")}</p>
               )}
