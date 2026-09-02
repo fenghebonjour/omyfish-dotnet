@@ -3,6 +3,7 @@ using System.Text.Json;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Prometheus;
+using Scalar.AspNetCore;
 using Serilog;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -100,6 +101,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenApi();
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
         .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("species-service"))
@@ -170,6 +173,8 @@ app.UseHttpMetrics();
 
 app.MapGet("/health", () => "ok");
 app.MapMetrics("/metrics");
+app.MapOpenApi();
+app.MapScalarApiReference();
 app.MapSpeciesEndpoints();
 app.MapIdentificationEndpoints();
 app.MapBiteScoreEndpoints();

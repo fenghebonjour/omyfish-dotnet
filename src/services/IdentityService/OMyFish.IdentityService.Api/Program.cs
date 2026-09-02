@@ -4,6 +4,7 @@ using System.Text;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Prometheus;
+using Scalar.AspNetCore;
 using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -73,6 +74,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenApi();
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
         .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("identity-service"))
@@ -105,6 +108,8 @@ app.UseHttpMetrics();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "identity" }));
 app.MapMetrics("/metrics");
+app.MapOpenApi();
+app.MapScalarApiReference();
 
 app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IUserRepository repo, ISubscriptionRepository subs) =>
 {

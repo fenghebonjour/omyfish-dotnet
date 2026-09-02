@@ -7,6 +7,11 @@
   <ItemGroup>
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.7" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
+    <!-- Pin above the transitive 2.0.0 pulled in by AspNetCore.OpenApi — that version has a
+         known stack-overflow-on-circular-schema advisory (GHSA-v5pm-xwqc-g5wc), fixed in 2.7.5+. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.17.2" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
     <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />

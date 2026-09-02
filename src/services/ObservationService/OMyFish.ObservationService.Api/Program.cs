@@ -3,6 +3,7 @@ using MassTransit;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Prometheus;
+using Scalar.AspNetCore;
 using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -100,6 +101,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenApi();
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
         .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("observation-service"))
@@ -126,6 +129,8 @@ app.UseHttpMetrics();
 
 app.MapGet("/health", () => "ok");
 app.MapMetrics("/metrics");
+app.MapOpenApi();
+app.MapScalarApiReference();
 app.MapObservationEndpoints();
 
 app.Run();

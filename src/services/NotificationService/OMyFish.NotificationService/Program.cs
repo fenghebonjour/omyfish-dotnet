@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using OMyFish.NotificationService.Consumers;
 using OMyFish.NotificationService.Persistence;
 using Prometheus;
+using Scalar.AspNetCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -82,6 +83,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddOpenApi();
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -100,6 +103,8 @@ app.UseHttpMetrics();
 
 app.MapGet("/health", () => "ok");
 app.MapMetrics("/metrics");
+app.MapOpenApi();
+app.MapScalarApiReference();
 
 var group = app.MapGroup("/api/v1/notifications").RequireAuthorization();
 
