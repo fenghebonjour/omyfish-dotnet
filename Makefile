@@ -42,6 +42,10 @@ test-service:
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 
+# Manual fallback only — each service now applies its own migrations/<Service>/*.sql
+# automatically on startup via DbUp (BACKLOG.md item F, WEAKNESS_AUDIT.md §3.1). Re-running
+# this against a DB DbUp has already migrated is safe (every migration file is idempotent),
+# but it isn't needed for normal `make build-up` use.
 migrate:
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/IdentityService/001_initial_identity_schema.sql

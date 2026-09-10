@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="dbup-postgresql" Version="7.0.1" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.7" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
@@ -18,5 +19,11 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\shared\OMyFish.Shared.Contracts\OMyFish.Shared.Contracts.csproj" />
+  </ItemGroup>
+  <!-- Embedded so the container doesn't depend on migrations/ being present on disk at
+       runtime — applied on startup via DbUp instead of EnsureCreatedAsync (BACKLOG.md item F,
+       WEAKNESS_AUDIT.md §3.1). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\..\migrations\NotificationService\*.sql" LogicalName="Migrations.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

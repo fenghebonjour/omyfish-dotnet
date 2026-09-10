@@ -145,9 +145,11 @@ needs, so it doesn't belong on Postgres. Port the same move here:
 **Status:** IN PROGRESS (added 2026-09-10). Findings from a senior-dev-style
 codebase audit; full explanation + fix snippets in `docs/WEAKNESS_AUDIT.md`.
 Grouped by priority. Landed 2026-09-10: quick/low-risk tier (commit d06c4db),
-security tier (commit cfb942e), and most of the resilience tier (idempotency +
-quorum queues, this commit) — the outbox pattern (§2.3) is deliberately still
-open, see its note below. Data layer/testing-CI/cleanup tiers are still open.
+security tier (commit cfb942e), most of the resilience tier (idempotency +
+quorum queues, commit 01ac2b6), and §3.1/§3.2/§3.4 of the data layer tier
+(this commit — **§3.1's DbUp switch needs `make build-up` verification, see
+its note below**) — the outbox pattern (§2.3) is deliberately still open, see
+its note below. §3.3 (PostGIS backfill), testing/CI, and cleanup are still open.
 
 **Security (critical) — DONE 2026-09-10:**
 - ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
@@ -206,25 +208,43 @@ open, see its note below. Data layer/testing-CI/cleanup tiers are still open.
   so no further action needed there.
 
 **Data layer (high):**
-- `EnsureCreatedAsync()` on every service startup competes with the raw-SQL
-  migrations as a second, divergent schema source — and masks missing
-  migrations since it only creates schema on a DB that doesn't exist yet.
-  **Confirmed in practice 2026-09-10**: adding `Notification.SourceEventId`
-  (§2.4 above) had no effect on the already-existing `notifications` table
-  after a `make build-up` on top of old Postgres data — `EnsureCreatedAsync`
-  silently no-oped, every notification read/write threw
+- ~~`EnsureCreatedAsync()` on every service startup competed with the
+  raw-SQL migrations as a second, divergent schema source~~ — **fixed
+  2026-09-10, NOT YET VERIFIED against a real build (no Docker in this dev
+  environment)**. Concretely bit us in practice first: adding
+  `Notification.SourceEventId` (§2.4) had no effect on the already-existing
+  `notifications` table after `make build-up` on top of old Postgres data —
+  `EnsureCreatedAsync` silently no-oped, every notification read/write threw
   `42703: column n.source_event_id does not exist`, and the triggering event
-  quietly died in MassTransit's fault queue with no user-visible error. Fixed
-  that instance by hand-applying the new migration's `ALTER TABLE` via
-  `make shell-postgres`. This will keep happening for every future column/table
-  change until §3.1 itself is fixed — worth prioritizing over the remaining
-  Testing/CI and Cleanup items below. (§3.1)
-- `make migrate` never applies `migrations/IdentityService/002_add_subscriptions.sql`. (§3.2)
+  quietly died in MassTransit's fault queue with no user-visible error (fixed
+  that one instance by hand-applying the `ALTER TABLE` via
+  `make shell-postgres`). Real fix: all 4 Api projects now embed their own
+  `migrations/<Service>/*.sql` as build-time resources and apply them via
+  `DbUp` (`dbup-postgresql` package) on startup instead of
+  `EnsureCreatedAsync`, failing fast if a migration fails. Also made the
+  species/observation `001_*.sql` files idempotent-safe (`CREATE TABLE/INDEX
+  IF NOT EXISTS`, `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER`) since they
+  weren't before — needed for DbUp's first-ever run against **your existing
+  dev DB specifically**, which already has these tables from prior
+  `EnsureCreatedAsync` runs. **Please verify with `make build-up` against
+  your current (non-empty) Postgres data** — watch `make logs
+  service=identity-service` (or any service) for "Database migration
+  failed" on startup; if you see it, paste the log. **Known limitation, not
+  solved here**: no distributed lock across replicas — deployments with
+  `replicas: 2` could run DbUp concurrently on startup. Same risk profile as
+  the old `EnsureCreatedAsync` behavior (not worse), just flagging it's not
+  a complete fix for multi-replica prod. Migration files, once applied
+  anywhere by DbUp, must never be edited again — add a new numbered file
+  instead (documented in `CLAUDE.md`). (§3.1)
+- ~~`make migrate` never applies
+  `migrations/IdentityService/002_add_subscriptions.sql`~~ — fixed in the
+  quick-win tier (commit d06c4db). (§3.2)
 - PostGIS `location` column/GIST index/`observations_within_radius()`
   function are all dead — `ObservationDbContext` ignores `Location`, so
-  coordinates only ever live in plain lat/lon columns. (§3.3)
-- N+1 query in `IdentifyFishCommandHandler` — one DB round-trip per AI
-  prediction instead of a batched lookup. (§3.4)
+  coordinates only ever live in plain lat/lon columns. Still open. (§3.3)
+- ~~N+1 query in `IdentifyFishCommandHandler`~~ — fixed in the quick-win tier
+  (commit d06c4db): batched species lookup instead of one query per AI
+  prediction. (§3.4)
 
 **Testing/CI (medium):**
 - ApiGateway has zero tests; no Infrastructure-layer tests anywhere

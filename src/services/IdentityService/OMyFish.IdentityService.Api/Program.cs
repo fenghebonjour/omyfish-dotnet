@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using DbUp;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Prometheus;
@@ -108,18 +109,19 @@ builder.Services.AddOpenTelemetry()
 var app = builder.Build();
 
 // ── Auto-migrate on startup ───────────────────────────────────────────────────
-using (var scope = app.Services.CreateScope())
-{
-    try
-    {
-        var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
-        db.Database.EnsureCreated();
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogWarning(ex, "DB not ready on startup — migrations may be needed");
-    }
-}
+// Applies migrations/IdentityService/*.sql (embedded at build time) via DbUp instead of
+// EF's EnsureCreated, which only creates schema on an empty DB and silently no-ops
+// otherwise — that gap caused a real production-shaped incident (a new required column
+// went live with no matching schema change). Fails fast on migration failure rather than
+// starting against a schema the app doesn't match (BACKLOG.md item F, WEAKNESS_AUDIT.md §3.1).
+var migrator = DeployChanges.To
+    .PostgresqlDatabase(builder.Configuration.GetConnectionString("Default"))
+    .WithScriptsEmbeddedInAssembly(typeof(Program).Assembly, s => s.StartsWith("Migrations.") && s.EndsWith(".sql"))
+    .LogToConsole()
+    .Build();
+var migrationResult = migrator.PerformUpgrade();
+if (!migrationResult.Successful)
+    throw new InvalidOperationException("Database migration failed — see inner exception.", migrationResult.Error);
 
 app.UseExceptionHandler();
 app.UseAuthentication();

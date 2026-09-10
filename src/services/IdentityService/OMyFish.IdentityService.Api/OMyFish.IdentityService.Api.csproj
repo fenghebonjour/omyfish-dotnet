@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="dbup-postgresql" Version="7.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <!-- Pin above the transitive 2.0.0 pulled in by AspNetCore.OpenApi — that version has a
@@ -22,5 +23,11 @@
     <ProjectReference Include="..\OMyFish.IdentityService.Domain\OMyFish.IdentityService.Domain.csproj" />
     <ProjectReference Include="..\OMyFish.IdentityService.Application\OMyFish.IdentityService.Application.csproj" />
     <ProjectReference Include="..\OMyFish.IdentityService.Infrastructure\OMyFish.IdentityService.Infrastructure.csproj" />
+  </ItemGroup>
+  <!-- Embedded so the container doesn't depend on migrations/ being present on disk at
+       runtime — applied on startup via DbUp instead of EnsureCreatedAsync (BACKLOG.md item F,
+       WEAKNESS_AUDIT.md §3.1). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\..\migrations\IdentityService\*.sql" LogicalName="Migrations.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

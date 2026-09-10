@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TABLE species (
+CREATE TABLE IF NOT EXISTS species (
     id                          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scientific_name             VARCHAR(255) NOT NULL UNIQUE,
     common_name                 VARCHAR(255) NOT NULL,
@@ -15,12 +15,12 @@ CREATE TABLE species (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_species_scientific ON species (scientific_name);
-CREATE INDEX idx_species_common     ON species (common_name);
-CREATE INDEX idx_species_na_fw      ON species (is_north_american_freshwater)
+CREATE INDEX IF NOT EXISTS idx_species_scientific ON species (scientific_name);
+CREATE INDEX IF NOT EXISTS idx_species_common     ON species (common_name);
+CREATE INDEX IF NOT EXISTS idx_species_na_fw      ON species (is_north_american_freshwater)
     WHERE is_north_american_freshwater = TRUE;
 
-CREATE TABLE predictions (
+CREATE TABLE IF NOT EXISTS predictions (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     species_id          UUID REFERENCES species(id) ON DELETE SET NULL,
     scientific_name     VARCHAR(255) NOT NULL,
@@ -31,6 +31,6 @@ CREATE TABLE predictions (
     predicted_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_predictions_species   ON predictions (species_id);
-CREATE INDEX idx_predictions_image_key ON predictions (image_storage_key);
-CREATE INDEX idx_predictions_date      ON predictions (predicted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_predictions_species   ON predictions (species_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_image_key ON predictions (image_storage_key);
+CREATE INDEX IF NOT EXISTS idx_predictions_date      ON predictions (predicted_at DESC);

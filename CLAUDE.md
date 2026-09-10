@@ -69,7 +69,24 @@ Both use MediatR. Register handlers with `services.AddMediatR(...)`.
 
 - PostgreSQL + PostGIS via Npgsql + NetTopologySuite EF Core plugin
 - Migrations: raw SQL in `migrations/` (no EF Core Migrations — use explicit SQL)
-- Apply with: `make migrate` or `psql` directly
+- **Applied automatically on service startup via DbUp** — each Api project embeds its own
+  `migrations/<Service>/*.sql` at build time (`EmbeddedResource` + `LogicalName="Migrations.*"`
+  in the `.csproj`) and runs them through `DeployChanges.To.PostgresqlDatabase(...)` before
+  `app.Run()`, failing fast (throwing) if a migration fails — this replaced
+  `EnsureCreatedAsync()`, which only created schema on an empty database and silently no-op'd
+  on an existing one, masking any new column/table until someone hit the resulting
+  `PostgresException` at runtime (BACKLOG.md item F, WEAKNESS_AUDIT.md §3.1)
+- `make migrate` / `psql` directly still works as a manual fallback (e.g. inspecting schema
+  state without starting a service), but is no longer the primary path
+- **Migration files, once applied by DbUp in any environment, must never be edited** — DbUp
+  tracks applied scripts by name in its own journal table and won't re-run them; add a new
+  numbered file for any further change, the same convention this repo already uses
+  (`00N_description.sql`)
+- New migration files must be idempotent-safe for their *first* run against a database that
+  already has the target objects (from a pre-DbUp `EnsureCreatedAsync()`, or a fresh empty
+  DB) — use `CREATE TABLE/INDEX IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE
+  FUNCTION`, and `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (Postgres has no `CREATE TRIGGER
+  IF NOT EXISTS`)
 - Spatial types: `NetTopologySuite.Geometries.Point` maps to PostGIS `geometry(Point,4326)`
 
 ## Messaging (MassTransit + RabbitMQ)

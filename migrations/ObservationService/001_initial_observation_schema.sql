@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TABLE observations (
+CREATE TABLE IF NOT EXISTS observations (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id             UUID NOT NULL,
     species_name        VARCHAR(255) NOT NULL,
@@ -21,16 +21,18 @@ CREATE TABLE observations (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_observations_location   ON observations USING GIST (location);
-CREATE INDEX idx_observations_user_id    ON observations (user_id);
-CREATE INDEX idx_observations_species    ON observations (species_name);
-CREATE INDEX idx_observations_observed   ON observations (observed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_observations_location   ON observations USING GIST (location);
+CREATE INDEX IF NOT EXISTS idx_observations_user_id    ON observations (user_id);
+CREATE INDEX IF NOT EXISTS idx_observations_species    ON observations (species_name);
+CREATE INDEX IF NOT EXISTS idx_observations_observed   ON observations (observed_at DESC);
 
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
+-- Postgres has no CREATE TRIGGER IF NOT EXISTS — drop-then-create is the idempotent form.
+DROP TRIGGER IF EXISTS trg_observations_updated_at ON observations;
 CREATE TRIGGER trg_observations_updated_at
     BEFORE UPDATE ON observations
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

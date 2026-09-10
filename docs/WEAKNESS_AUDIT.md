@@ -279,6 +279,11 @@ public async Task Consume(ConsumeContext<ObservationCreatedEvent> context)
 
 ## 3. Data layer
 
+**Status:** §3.1, §3.2, §3.4 fixed 2026-09-10 — see `BACKLOG.md` item F for
+what shipped. §3.1 in particular needs `make build-up` verification against
+a real, non-empty dev database (not available where this was written); §3.3
+(PostGIS backfill) is still open.
+
 ### 3.1 Two competing schema sources that silently drift
 
 **Problem:** `migrations/*.sql` is the documented source of truth

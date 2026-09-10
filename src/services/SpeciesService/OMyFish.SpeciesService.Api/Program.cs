@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using DbUp;
 using Microsoft.AspNetCore.RateLimiting;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -154,16 +155,20 @@ builder.Services.AddOpenTelemetry()
 
 var app = builder.Build();
 
-// Ensure schema exists (fault-tolerant for cold starts)
-using (var scope = app.Services.CreateScope())
-{
-    try
-    {
-        var db = scope.ServiceProvider.GetRequiredService<SpeciesDbContext>();
-        await db.Database.EnsureCreatedAsync();
-    }
-    catch { /* DB may not be ready yet; migrations handle schema */ }
-}
+// Applies migrations/SpeciesService/*.sql (embedded at build time) via DbUp instead of EF's
+// EnsureCreated, which only creates schema on an empty DB and silently no-ops otherwise —
+// that gap caused a real production-shaped incident on another service in this repo (a new
+// required column went live with no matching schema change). Fails fast on migration
+// failure rather than starting against a schema the app doesn't match (BACKLOG.md item F,
+// WEAKNESS_AUDIT.md §3.1).
+var migrator = DeployChanges.To
+    .PostgresqlDatabase(builder.Configuration.GetConnectionString("Default"))
+    .WithScriptsEmbeddedInAssembly(typeof(Program).Assembly, s => s.StartsWith("Migrations.") && s.EndsWith(".sql"))
+    .LogToConsole()
+    .Build();
+var migrationResult = migrator.PerformUpgrade();
+if (!migrationResult.Successful)
+    throw new InvalidOperationException("Database migration failed — see inner exception.", migrationResult.Error);
 
 // Seed species from fish_info.json if available
 var metadataPath = app.Configuration["Seeding__MetadataPath"] ?? app.Configuration["Seeding:MetadataPath"];

@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="dbup-postgresql" Version="7.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <!-- Pin above the transitive 2.0.0 pulled in by AspNetCore.OpenApi — that version has a
          known stack-overflow-on-circular-schema advisory (GHSA-v5pm-xwqc-g5wc), fixed in 2.7.5+. -->
@@ -21,5 +22,11 @@
   <ItemGroup>
     <ProjectReference Include="..\OMyFish.ObservationService.Application\OMyFish.ObservationService.Application.csproj" />
     <ProjectReference Include="..\OMyFish.ObservationService.Infrastructure\OMyFish.ObservationService.Infrastructure.csproj" />
+  </ItemGroup>
+  <!-- Embedded so the container doesn't depend on migrations/ being present on disk at
+       runtime — applied on startup via DbUp instead of EnsureCreatedAsync (BACKLOG.md item F,
+       WEAKNESS_AUDIT.md §3.1). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\..\migrations\ObservationService\*.sql" LogicalName="Migrations.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
