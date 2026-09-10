@@ -15,6 +15,15 @@ public class SpeciesRepository : ISpeciesRepository
         => _db.Species.FirstOrDefaultAsync(
             s => s.ScientificName.ToLower() == scientificName.ToLower(), ct);
 
+    public async Task<IReadOnlyList<Species>> FindByScientificNamesAsync(
+        IEnumerable<string> scientificNames, CancellationToken ct = default)
+    {
+        var lowered = scientificNames.Select(n => n.ToLower()).ToList();
+        return await _db.Species
+            .Where(s => lowered.Contains(s.ScientificName.ToLower()))
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<Species>> GetAllAsync(CancellationToken ct = default)
         => await _db.Species.AsNoTracking().ToListAsync(ct);
 

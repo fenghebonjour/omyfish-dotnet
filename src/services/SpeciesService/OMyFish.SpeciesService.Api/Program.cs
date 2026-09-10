@@ -39,11 +39,17 @@ builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(IdentifyFishCommand).Assembly));
 
 // AI service HTTP client
+// Bounded timeout so a slow (not down) ai-service fails fast instead of hanging on the
+// BCL default of 100s with no global handler to catch the resulting TaskCanceledException
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.1).
 builder.Services.AddHttpClient<IAIServiceClient, AIServiceClient>(client =>
+{
     client.BaseAddress = new Uri(
         builder.Configuration["AIService__BaseUrl"]
         ?? builder.Configuration["AIService:BaseUrl"]
-        ?? "http://ai-service:8000"));
+        ?? "http://ai-service:8000");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 
 // Object storage (identify persists the image and returns a real storage key)
 var minioEndpoint = builder.Configuration["MinIO__Endpoint"]
@@ -102,6 +108,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddOpenApi();
+
+// Catches unhandled exceptions (e.g. AIServiceClient's TaskCanceledException on a slow
+// ai-service) so callers get a clean 5xx instead of a raw exception page (BACKLOG.md item F,
+// WEAKNESS_AUDIT.md §2.2).
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
@@ -167,6 +179,7 @@ if (!string.IsNullOrEmpty(metadataPath) && File.Exists(metadataPath))
     }
 }
 
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseHttpMetrics();
@@ -181,3 +194,21 @@ app.MapBiteScoreEndpoints();
 app.MapRegsEndpoints();
 
 app.Run();
+
+// Logs and turns any exception the endpoints/middleware don't already handle into a clean
+// JSON 5xx response, instead of ASP.NET Core's default unhandled-exception behavior
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.2).
+internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : Microsoft.AspNetCore.Diagnostics.IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken ct)
+    {
+        logger.LogError(exception, "Unhandled exception on {Path}", httpContext.Request.Path);
+
+        httpContext.Response.StatusCode = exception is TaskCanceledException or TimeoutException
+            ? StatusCodes.Status504GatewayTimeout
+            : StatusCodes.Status500InternalServerError;
+
+        await httpContext.Response.WriteAsJsonAsync(new { error = "An unexpected error occurred." }, ct);
+        return true;
+    }
+}

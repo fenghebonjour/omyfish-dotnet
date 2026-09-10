@@ -36,9 +36,16 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
         var predictions = new List<PredictionDto>();
         Species? topSpecies = null;
 
+        // Batched lookup instead of one query per prediction (BACKLOG.md item F, WEAKNESS_AUDIT.md §3.4).
+        var scientificNames = aiResult.Predictions.Select(p => p.ScientificName).ToList();
+        var knownSpecies = scientificNames.Count == 0
+            ? new Dictionary<string, Species>(StringComparer.OrdinalIgnoreCase)
+            : (await _speciesRepository.FindByScientificNamesAsync(scientificNames, ct))
+                .ToDictionary(s => s.ScientificName, StringComparer.OrdinalIgnoreCase);
+
         foreach (var ai in aiResult.Predictions)
         {
-            var species = await _speciesRepository.FindByScientificNameAsync(ai.ScientificName, ct)
+            var species = knownSpecies.GetValueOrDefault(ai.ScientificName)
                 ?? Species.Create(ai.ScientificName, ai.CommonName, "Unknown",
                                   "Unknown", "Unknown", "Unknown", "", false);
 

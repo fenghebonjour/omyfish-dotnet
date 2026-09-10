@@ -36,8 +36,8 @@ public class IdentifyFishCommandHandlerTests
     {
         var walleye = Species.Create("Sander vitreus", "Walleye", "Percidae",
             "LC", "Lake", "NA", "Desc", true);
-        _repo.FindByScientificNameAsync("Sander vitreus", Arg.Any<CancellationToken>())
-            .Returns(walleye);
+        _repo.FindByScientificNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { walleye });
         AiReturns(new AIPrediction("Sander vitreus", "Walleye", 0.91, 1));
 
         var result = await _handler.Handle(Command, CancellationToken.None);
@@ -113,7 +113,7 @@ public class IdentifyFishCommandHandlerTests
         Assert.Empty(result.Predictions);
         Assert.True(result.Uncertain);
         await _repo.DidNotReceive()
-            .FindByScientificNameAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .FindByScientificNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
         await _publisher.DidNotReceive()
             .PublishAsync(Arg.Any<DomainEvent>(), Arg.Any<CancellationToken>());
     }
@@ -133,8 +133,8 @@ public class IdentifyFishCommandHandlerTests
     {
         var walleye = Species.Create("Sander vitreus", "Walleye", "Percidae",
             "LC", "Lake", "NA", "Catalog description", true);
-        _repo.FindByScientificNameAsync("Sander vitreus", Arg.Any<CancellationToken>())
-            .Returns(walleye);
+        _repo.FindByScientificNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { walleye });
         AiReturns(new AIPrediction("Sander vitreus", "Walleye", 0.91, 1,
             ConservationStatus: "Near Threatened", Habitat: "River",
             Diet: "Minnows", MaxSizeCm: 107, Description: "AI description", FunFact: "Glows"));
@@ -155,8 +155,8 @@ public class IdentifyFishCommandHandlerTests
     {
         var walleye = Species.Create("Sander vitreus", "Walleye", "Percidae",
             "LC", "Lake", "NA", "Catalog description", true);
-        _repo.FindByScientificNameAsync("Sander vitreus", Arg.Any<CancellationToken>())
-            .Returns(walleye);
+        _repo.FindByScientificNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new[] { walleye });
         AiReturns(new AIPrediction("Sander vitreus", "Walleye", 0.91, 1));
 
         var result = await _handler.Handle(Command, CancellationToken.None);

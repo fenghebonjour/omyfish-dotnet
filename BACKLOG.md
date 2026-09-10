@@ -137,3 +137,66 @@ needs, so it doesn't belong on Postgres. Port the same move here:
   `OMyFish.SpeciesService.Infrastructure.csproj`, add `MongoDB.Driver`.
 - Verify with this repo's test suite plus an end-to-end `docker compose up
   --build` check, same as Java's verification pass.
+
+---
+
+## [ ] F — Weakness audit follow-up (security, resilience, data consistency)
+
+**Status:** NOT STARTED (added 2026-09-10). Findings from a senior-dev-style
+codebase audit; full explanation + fix snippets in `docs/WEAKNESS_AUDIT.md`.
+Grouped by priority — top two groups are the ones worth doing before this
+sees real traffic.
+
+**Security (critical):**
+- Gateway configures JWT auth but never calls `.RequireAuthorization()` on
+  `MapReverseProxy()` — enforcement is 100% delegated to downstream services
+  with no second layer. (`WEAKNESS_AUDIT.md` §1.1)
+- `POST /api/v1/species/identify` and the bite-score endpoints are
+  `.AllowAnonymous()` with **no rate limiting anywhere in the codebase** —
+  unbounded free access to the paid AI pipeline. (§1.2)
+- Refresh tokens (30-day) stored in `localStorage`, not httpOnly cookies —
+  XSS-exfiltrable long-lived account takeover. (§1.3)
+- No `USER` directive in any of the 5 .NET Dockerfiles; no
+  `securityContext`/`runAsNonRoot` in K8s or Helm — containers run as root. (§1.4)
+
+**Resilience (high):**
+- No Polly/timeout on `AIServiceClient` — a slow (not down) ai-service hangs
+  a request for the BCL default 100s, then throws uncaught. (§2.1)
+- No global exception handler (`IExceptionHandler`) in any Api project. (§2.2)
+- Dual-write without an outbox: DB save + event publish are separate calls
+  in `CreateObservationCommandHandler`/`IdentifyFishCommandHandler` — a
+  crash between them silently drops the event. (§2.3)
+- No idempotency in NotificationService consumers — message redelivery
+  creates duplicate notifications. (§2.4)
+- DLQ (`.dlq` suffix)/quorum-queue setup is documented in `CLAUDE.md` but not
+  implemented in code; retry policy only exists on NotificationService's
+  consumers, not on the publish side anywhere.
+
+**Data layer (high):**
+- `EnsureCreatedAsync()` on every service startup competes with the raw-SQL
+  migrations as a second, divergent schema source — and masks missing
+  migrations since it only creates schema on a DB that doesn't exist yet. (§3.1)
+- `make migrate` never applies `migrations/IdentityService/002_add_subscriptions.sql`. (§3.2)
+- PostGIS `location` column/GIST index/`observations_within_radius()`
+  function are all dead — `ObservationDbContext` ignores `Location`, so
+  coordinates only ever live in plain lat/lon columns. (§3.3)
+- N+1 query in `IdentifyFishCommandHandler` — one DB round-trip per AI
+  prediction instead of a batched lookup. (§3.4)
+
+**Testing/CI (medium):**
+- ApiGateway has zero tests; no Infrastructure-layer tests anywhere
+  (repositories, `AIServiceClient`, publishers); no HTTP-level endpoint
+  tests — this is the same gap as the existing "WebApplicationFactory
+  HTTP-level slice tests" follow-up above, not a new item, just re-flagged
+  because it's exactly what would have caught §1.1/§1.2.
+- CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
+  (no `npm test` script exists at all), no image build, no dependency scan.
+
+**Cleanup (low):**
+- `AddOMyFishTelemetry` shared extension is dead code — never called, every
+  service copy-pastes the same OTel setup inline instead.
+- Stray `{Consumers}`/`{Endpoints}` scaffold directories (literal braces in
+  the name) in NotificationService, ObservationService.Api, SpeciesService.Api.
+- Helm chart's `templates/deployment.yaml`/`hpa.yaml`/`Chart.yaml` are
+  literal `// placeholder` — `helm install` deploys nothing despite a
+  fully-authored `values.yaml`.

@@ -45,6 +45,9 @@ test-service:
 migrate:
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/IdentityService/001_initial_identity_schema.sql
+	# 002 was missing here, so `subscriptions` was never created by `make migrate` (BACKLOG.md item F)
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/IdentityService/002_add_subscriptions.sql
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/SpeciesService/001_initial_species_schema.sql
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \

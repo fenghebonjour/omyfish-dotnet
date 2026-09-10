@@ -76,6 +76,11 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddOpenApi();
 
+// Catches unhandled exceptions so callers get a clean 5xx instead of a raw exception page
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.2).
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
         .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("identity-service"))
@@ -100,6 +105,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseHttpMetrics();
@@ -349,3 +355,21 @@ record TokenResponse(string Token, string RefreshToken, Guid UserId, string Emai
 record UserDto(Guid Id, string Email, string? DisplayName, string Role);
 record ApiKeyRequest(string Name);
 record ApiKeyResponse(Guid KeyId, string PlainKey, string Name);
+
+// Logs and turns any exception the endpoints/middleware don't already handle into a clean
+// JSON 5xx response, instead of ASP.NET Core's default unhandled-exception behavior
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.2).
+internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : Microsoft.AspNetCore.Diagnostics.IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken ct)
+    {
+        logger.LogError(exception, "Unhandled exception on {Path}", httpContext.Request.Path);
+
+        httpContext.Response.StatusCode = exception is TaskCanceledException or TimeoutException
+            ? StatusCodes.Status504GatewayTimeout
+            : StatusCodes.Status500InternalServerError;
+
+        await httpContext.Response.WriteAsJsonAsync(new { error = "An unexpected error occurred." }, ct);
+        return true;
+    }
+}
