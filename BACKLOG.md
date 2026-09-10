@@ -144,10 +144,10 @@ needs, so it doesn't belong on Postgres. Port the same move here:
 
 **Status:** IN PROGRESS (added 2026-09-10). Findings from a senior-dev-style
 codebase audit; full explanation + fix snippets in `docs/WEAKNESS_AUDIT.md`.
-Grouped by priority. Quick/low-risk tier (N+1 fix, missing migration,
-AIServiceClient timeout, global exception handlers, dead-code cleanup) landed
-2026-09-10, commit d06c4db. Security tier below landed the same day, next
-commit — resilience/data/testing/cleanup tiers are still open.
+Grouped by priority. Landed 2026-09-10: quick/low-risk tier (commit d06c4db),
+security tier (commit cfb942e), and most of the resilience tier (idempotency +
+quorum queues, this commit) — the outbox pattern (§2.3) is deliberately still
+open, see its note below. Data layer/testing-CI/cleanup tiers are still open.
 
 **Security (critical) — DONE 2026-09-10:**
 - ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
@@ -167,25 +167,39 @@ commit — resilience/data/testing/cleanup tiers are still open.
 - ~~No `USER` directive in any of the 5 .NET Dockerfiles; no
   `securityContext`/`runAsNonRoot` in K8s~~ — fixed: all 5 Dockerfiles run as
   `USER $APP_UID`; matching `securityContext.runAsNonRoot`/
-  `allowPrivilegeEscalation: false` added to the 5 K8s deployments. **Not
-  verified against a real build** — Docker wasn't available in the dev
-  environment this was written in; `$APP_UID` is Microsoft's documented
-  .NET 8+ container convention but confirm with `make build-up` before relying
-  on it. Helm chart still not addressed (its deployment template is a
-  placeholder — see Cleanup below). (§1.4)
+  `allowPrivilegeEscalation: false` added to the 5 K8s deployments. **Verified
+  2026-09-10 via `make build-up`** (user-run, outside this environment — no
+  Docker access here). Helm chart still not addressed (its deployment
+  template is a placeholder — see Cleanup below). (§1.4)
 
 **Resilience (high):**
-- No Polly/timeout on `AIServiceClient` — a slow (not down) ai-service hangs
-  a request for the BCL default 100s, then throws uncaught. (§2.1)
-- No global exception handler (`IExceptionHandler`) in any Api project. (§2.2)
-- Dual-write without an outbox: DB save + event publish are separate calls
-  in `CreateObservationCommandHandler`/`IdentifyFishCommandHandler` — a
-  crash between them silently drops the event. (§2.3)
-- No idempotency in NotificationService consumers — message redelivery
-  creates duplicate notifications. (§2.4)
-- DLQ (`.dlq` suffix)/quorum-queue setup is documented in `CLAUDE.md` but not
-  implemented in code; retry policy only exists on NotificationService's
-  consumers, not on the publish side anywhere.
+- ~~No Polly/timeout on `AIServiceClient`~~ — fixed in the quick-win tier
+  (commit d06c4db): 15s `HttpClient.Timeout`. (§2.1)
+- ~~No global exception handler (`IExceptionHandler`) in any Api project~~ —
+  fixed in the quick-win tier (commit d06c4db): added to all 5 Api projects. (§2.2)
+- **TODO — deferred by user decision 2026-09-10:** Dual-write without an
+  outbox: DB save + event publish are separate calls in
+  `CreateObservationCommandHandler`/`IdentifyFishCommandHandler` — a crash
+  between them silently drops the event (rare — only on a crash at that exact
+  moment — but silent when it happens). Fix is a MassTransit EF Core outbox +
+  an `IUnitOfWork` seam through the repository layer (Application/Domain
+  can't reference EF Core directly) across both services, plus new outbox
+  tables in both databases. Do this as its own round, verified by actually
+  triggering an identify/observation-create via `make build-up` and watching
+  the resulting notification arrive — don't land it on a build-only check. (§2.3)
+- ~~No idempotency in NotificationService consumers~~ — fixed: `Notification`
+  now has a unique `SourceEventId` (the publisher's MassTransit `MessageId`);
+  `ObservationCreatedConsumer` skips on a redelivered id instead of inserting
+  a duplicate. Migration: `migrations/NotificationService/002_add_source_event_id.sql`. (§2.4)
+- ~~DLQ/quorum-queue setup was documented in `CLAUDE.md` but not implemented~~
+  — `CLAUDE.md` corrected instead of chasing an unverified custom `.dlq`
+  suffix: NotificationService's two receive endpoints now use
+  `e.SetQuorumQueue()`; failed messages land in MassTransit's own default
+  `<queue>_error` fault queue, which is what the retry policy already assumed.
+  Retry policy still only exists on the consume side, not the publish side —
+  that's inherent to MassTransit's retry model (it retries message
+  *processing*, publish failures are a connection-resilience concern instead)
+  so no further action needed there.
 
 **Data layer (high):**
 - `EnsureCreatedAsync()` on every service startup competes with the raw-SQL

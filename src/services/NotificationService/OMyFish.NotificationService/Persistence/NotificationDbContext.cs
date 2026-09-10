@@ -22,6 +22,8 @@ public class NotificationDbContext : DbContext
             n.Property(x => x.Body).HasColumnName("body");
             n.Property(x => x.IsRead).HasColumnName("is_read");
             n.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            n.Property(x => x.SourceEventId).HasColumnName("source_event_id").IsRequired();
+            n.HasIndex(x => x.SourceEventId).IsUnique();
         });
     }
 }

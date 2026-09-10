@@ -9,10 +9,11 @@ snippet. Tracked for real work in `BACKLOG.md` item F — this file is the
 
 ## 1. Security
 
-**Status: fixed 2026-09-10** (all four items below — gateway enforcement,
-rate limiting, cookie-based refresh tokens, non-root containers). Left as-is
-below for reference; see `BACKLOG.md` item F for what actually shipped and
-its caveats (the Docker/K8s fix wasn't verified against a real build).
+**Status: fixed and verified 2026-09-10** (all four items below — gateway
+enforcement, rate limiting, cookie-based refresh tokens, non-root
+containers; the Docker/K8s non-root change was confirmed with `make
+build-up`). Left as-is below for reference; see `BACKLOG.md` item F for what
+actually shipped.
 
 ### 1.1 Gateway sets up JWT auth but never enforces it
 
@@ -129,6 +130,11 @@ securityContext:
 ---
 
 ## 2. Resilience
+
+**Status:** §2.1, §2.2, §2.4 fixed 2026-09-10 (see `BACKLOG.md` item F for
+what shipped). §2.3 (the outbox pattern) is deliberately still open — it
+needs a live Postgres/RabbitMQ to verify a write-path change against, which
+wasn't available where this was written.
 
 ### 2.1 No timeout / retry / circuit breaker on the AI service client
 

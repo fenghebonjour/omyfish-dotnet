@@ -37,8 +37,13 @@ builder.Services.AddMassTransit(x =>
                     ?? builder.Configuration["RabbitMQ:Password"] ?? "guest");
         });
 
+        // Quorum queues (replicated, crash-safe) instead of the RabbitMQ default classic
+        // queue — matches what CLAUDE.md already documented as this project's convention
+        // but nothing actually configured (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.3-adjacent
+        // "DLQ/quorum-queue setup" finding).
         cfg.ReceiveEndpoint("notifications.fish-identified", e =>
         {
+            e.SetQuorumQueue();
             e.ConfigureConsumer<FishIdentifiedConsumer>(busCtx);
             e.UseMessageRetry(r => r.Exponential(3,
                 TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30)));
@@ -46,6 +51,7 @@ builder.Services.AddMassTransit(x =>
 
         cfg.ReceiveEndpoint("notifications.observation-created", e =>
         {
+            e.SetQuorumQueue();
             e.ConfigureConsumer<ObservationCreatedConsumer>(busCtx);
             e.UseMessageRetry(r => r.Exponential(3,
                 TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30)));

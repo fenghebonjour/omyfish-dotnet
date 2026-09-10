@@ -75,9 +75,12 @@ Both use MediatR. Register handlers with `services.AddMediatR(...)`.
 ## Messaging (MassTransit + RabbitMQ)
 
 - Integration events: `OMyFish.Shared.Contracts/Events/`
-- Quorum queues configured in `RabbitMqHostSettings`
-- DLQ suffix: `.dlq` — configure in `IReceiveEndpointConfigurator`
-- Retry policy: 3 attempts, exponential backoff (5s, 30s, 5min)
+- Receive endpoints (NotificationService only — SpeciesService/ObservationService only
+  publish) use quorum queues via `e.SetQuorumQueue()` per `ReceiveEndpoint(...)` call
+- Failed messages land in MassTransit's own `<queue>_error` fault queue (its default
+  application-level dead-lettering, not a custom `.dlq` suffix or RabbitMQ's native DLX)
+- Retry policy: 3 attempts, exponential backoff — `r.Exponential(3, min: 5s, max: 5min, delta: 30s)`,
+  configured on NotificationService's two receive endpoints only (not on the publish side)
 
 ## AI Service
 

@@ -16,11 +16,13 @@ public class ObservationCreatedConsumerTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static ConsumeContext<ObservationCreatedEvent> FakeContext(ObservationCreatedEvent evt)
+    private static ConsumeContext<ObservationCreatedEvent> FakeContext(
+        ObservationCreatedEvent evt, Guid? messageId = null)
     {
         var ctx = Substitute.For<ConsumeContext<ObservationCreatedEvent>>();
         ctx.Message.Returns(evt);
         ctx.CancellationToken.Returns(CancellationToken.None);
+        ctx.MessageId.Returns(messageId ?? Guid.NewGuid());
         return ctx;
     }
 
@@ -40,5 +42,20 @@ public class ObservationCreatedConsumerTests
         Assert.Equal("OBSERVATION_CREATED", notification.Type);
         Assert.Contains("Walleye", notification.Title);
         Assert.False(notification.IsRead);
+    }
+
+    [Fact]
+    public async Task Consume_RedeliveredMessage_DoesNotCreateDuplicateNotification()
+    {
+        using var db = NewDb();
+        var consumer = new ObservationCreatedConsumer(db, Substitute.For<ILogger<ObservationCreatedConsumer>>());
+        var evt = new ObservationCreatedEvent(
+            Guid.NewGuid(), Guid.NewGuid(), "Walleye", 45.5, -73.5, "stored/fish.jpg", DateTime.UtcNow);
+        var messageId = Guid.NewGuid();
+
+        await consumer.Consume(FakeContext(evt, messageId));
+        await consumer.Consume(FakeContext(evt, messageId));
+
+        Assert.Single(db.Notifications);
     }
 }

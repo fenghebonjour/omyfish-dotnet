@@ -56,6 +56,8 @@ migrate:
 	  -f migrations/ObservationService/002_add_postgis_extension.sql
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/NotificationService/001_initial_notification_schema.sql
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/NotificationService/002_add_source_event_id.sql
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
