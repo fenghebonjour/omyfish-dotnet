@@ -23,4 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget \
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD wget -qO- http://localhost:8080/health || exit 1
 COPY --from=build /out .
+# Run as the non-root user baked into the .NET runtime image instead of root
+# (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+USER $APP_UID
 ENTRYPOINT ["dotnet", "OMyFish.IdentityService.Api.dll"]

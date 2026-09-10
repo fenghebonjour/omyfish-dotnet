@@ -131,7 +131,6 @@ export interface NotificationDto {
 
 export interface TokenResponse {
   token: string;
-  refreshToken: string;
   userId: string;
   email: string;
   role: string;
@@ -187,6 +186,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        credentials: "include",
       }),
 
     register: (email: string, password: string, displayName?: string) =>
@@ -196,12 +196,17 @@ export const api = {
         body: JSON.stringify({ email, password, displayName }),
       }),
 
-    refresh: (refreshToken: string) =>
+    // Refresh token is an httpOnly cookie now, not a value the client holds — the browser
+    // attaches it automatically as long as this request includes credentials
+    // (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3).
+    refresh: () =>
       apiFetch<TokenResponse>("/api/v1/auth/refresh", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
+        credentials: "include",
       }),
+
+    logout: () =>
+      apiFetch<void>("/api/v1/auth/logout", { method: "POST", credentials: "include" }),
 
     me: (token: string) =>
       apiFetch<UserDto>("/api/v1/auth/me", {}, token),

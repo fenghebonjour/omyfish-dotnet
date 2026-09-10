@@ -140,24 +140,39 @@ needs, so it doesn't belong on Postgres. Port the same move here:
 
 ---
 
-## [ ] F — Weakness audit follow-up (security, resilience, data consistency)
+## [~] F — Weakness audit follow-up (security, resilience, data consistency)
 
-**Status:** NOT STARTED (added 2026-09-10). Findings from a senior-dev-style
+**Status:** IN PROGRESS (added 2026-09-10). Findings from a senior-dev-style
 codebase audit; full explanation + fix snippets in `docs/WEAKNESS_AUDIT.md`.
-Grouped by priority — top two groups are the ones worth doing before this
-sees real traffic.
+Grouped by priority. Quick/low-risk tier (N+1 fix, missing migration,
+AIServiceClient timeout, global exception handlers, dead-code cleanup) landed
+2026-09-10, commit d06c4db. Security tier below landed the same day, next
+commit — resilience/data/testing/cleanup tiers are still open.
 
-**Security (critical):**
-- Gateway configures JWT auth but never calls `.RequireAuthorization()` on
-  `MapReverseProxy()` — enforcement is 100% delegated to downstream services
-  with no second layer. (`WEAKNESS_AUDIT.md` §1.1)
-- `POST /api/v1/species/identify` and the bite-score endpoints are
-  `.AllowAnonymous()` with **no rate limiting anywhere in the codebase** —
-  unbounded free access to the paid AI pipeline. (§1.2)
-- Refresh tokens (30-day) stored in `localStorage`, not httpOnly cookies —
-  XSS-exfiltrable long-lived account takeover. (§1.3)
-- No `USER` directive in any of the 5 .NET Dockerfiles; no
-  `securityContext`/`runAsNonRoot` in K8s or Helm — containers run as root. (§1.4)
+**Security (critical) — DONE 2026-09-10:**
+- ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
+  `MapReverseProxy()`~~ — fixed: `MapReverseProxy().RequireAuthorization()` is
+  now the default, with `"AuthorizationPolicy": "Anonymous"` opt-outs in
+  `appsettings.json` for the routes that are genuinely public today
+  (identity auth routes, the whole species surface, observations geojson).
+  (`WEAKNESS_AUDIT.md` §1.1)
+- ~~`POST /api/v1/species/identify` and the bite-score endpoints are
+  `.AllowAnonymous()` with no rate limiting~~ — fixed: per-IP fixed-window
+  rate limiting added (`identify`: 10/min, `bite-score`: 30/min). (§1.2)
+- ~~Refresh tokens (30-day) stored in `localStorage`~~ — fixed: refresh token
+  now travels only as an httpOnly, SameSite=Strict cookie scoped to
+  `/api/v1/auth`; added `POST /api/v1/auth/logout` to clear it. Gateway CORS
+  now allows credentials (still restricted to the exact configured frontend
+  origin, never a wildcard). (§1.3)
+- ~~No `USER` directive in any of the 5 .NET Dockerfiles; no
+  `securityContext`/`runAsNonRoot` in K8s~~ — fixed: all 5 Dockerfiles run as
+  `USER $APP_UID`; matching `securityContext.runAsNonRoot`/
+  `allowPrivilegeEscalation: false` added to the 5 K8s deployments. **Not
+  verified against a real build** — Docker wasn't available in the dev
+  environment this was written in; `$APP_UID` is Microsoft's documented
+  .NET 8+ container convention but confirm with `make build-up` before relying
+  on it. Helm chart still not addressed (its deployment template is a
+  placeholder — see Cleanup below). (§1.4)
 
 **Resilience (high):**
 - No Polly/timeout on `AIServiceClient` — a slow (not down) ai-service hangs

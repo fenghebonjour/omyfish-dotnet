@@ -26,33 +26,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem("omyfish_token");
     const userId = localStorage.getItem("omyfish_userId");
     const email = localStorage.getItem("omyfish_email");
-    const refreshToken = localStorage.getItem("omyfish_refresh");
     if (token) {
       setAuth({ token, userId, email });
       setIsLoading(false);
-    } else if (refreshToken) {
-      api.auth.refresh(refreshToken)
+    } else {
+      // No access token in memory/localStorage — try the httpOnly refresh cookie, if any
+      // (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3). A 401 here just means the user isn't
+      // logged in.
+      api.auth.refresh()
         .then((resp) => {
           persistAuth(resp);
           setAuth({ token: resp.token, userId: resp.userId, email: resp.email });
         })
         .catch(() => clearStorage())
         .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
     }
   }, []);
 
   const persistAuth = (resp: TokenResponse) => {
     localStorage.setItem("omyfish_token", resp.token);
-    localStorage.setItem("omyfish_refresh", resp.refreshToken);
     localStorage.setItem("omyfish_userId", resp.userId);
     localStorage.setItem("omyfish_email", resp.email);
   };
 
   const clearStorage = () => {
     localStorage.removeItem("omyfish_token");
-    localStorage.removeItem("omyfish_refresh");
     localStorage.removeItem("omyfish_userId");
     localStorage.removeItem("omyfish_email");
   };
@@ -66,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     clearStorage();
     setAuth({ token: null, userId: null, email: null });
+    api.auth.logout().catch(() => {});
   }, []);
 
   return (

@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.RateLimiting;
 using OMyFish.SpeciesService.Application.Commands;
 
 namespace OMyFish.SpeciesService.Api.Endpoints;
@@ -37,6 +38,9 @@ public static class IdentificationEndpoints
             }
         })
         .AllowAnonymous()
+        // Anonymous + AI-backed = capped per IP so it can't be scripted for free unbounded
+        // use (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.2).
+        .RequireRateLimiting("identify")
         .DisableAntiforgery()
         .Accepts<IFormFile>("multipart/form-data")
         .WithName("IdentifyFish");

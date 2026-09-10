@@ -9,6 +9,11 @@ snippet. Tracked for real work in `BACKLOG.md` item F — this file is the
 
 ## 1. Security
 
+**Status: fixed 2026-09-10** (all four items below — gateway enforcement,
+rate limiting, cookie-based refresh tokens, non-root containers). Left as-is
+below for reference; see `BACKLOG.md` item F for what actually shipped and
+its caveats (the Docker/K8s fix wasn't verified against a real build).
+
 ### 1.1 Gateway sets up JWT auth but never enforces it
 
 **Problem:** `ApiGateway/Program.cs` configures `AddAuthentication`/

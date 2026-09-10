@@ -15,9 +15,15 @@ spec:
       labels:
         app: api-gateway
     spec:
+      # Matches the Dockerfile's `USER $APP_UID` — fails fast if the image ever
+      # regresses to running as root (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: api-gateway
           image: omyfish/api-gateway:latest
+          securityContext:
+            allowPrivilegeEscalation: false
           ports:
             - containerPort: 8080
           env:

@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.RateLimiting;
 using OMyFish.SpeciesService.Application.Queries;
 
 namespace OMyFish.SpeciesService.Api.Endpoints;
@@ -32,6 +33,9 @@ public static class BiteScoreEndpoints
             }
         })
         .AllowAnonymous()
+        // Anonymous + AI/weather-backed = capped per IP (BACKLOG.md item F,
+        // WEAKNESS_AUDIT.md §1.2).
+        .RequireRateLimiting("bite-score")
         .WithName("GetBiteForecast");
 
         group.MapGet("/today", async (
@@ -56,6 +60,7 @@ public static class BiteScoreEndpoints
             }
         })
         .AllowAnonymous()
+        .RequireRateLimiting("bite-score")
         .WithName("GetBiteToday");
     }
 }

@@ -47,9 +47,10 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
-// Restricted to the known frontend origin — auth uses a Bearer token (not
-// cookies), so credentials aren't needed here, matching Java's gateway CORS
-// posture instead of a wildcard-origin+credentials policy.
+// Restricted to the known frontend origin. AllowCredentials is required now that the
+// refresh token travels as an httpOnly cookie instead of the response body
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3) — safe only because the origin is a specific
+// known value, never a wildcard, per CORS rules.
 var allowedOrigin = builder.Configuration["Cors__AllowedOrigin"]
                  ?? builder.Configuration["Cors:AllowedOrigin"]
                  ?? "http://localhost:3000";
@@ -57,7 +58,8 @@ var allowedOrigin = builder.Configuration["Cors__AllowedOrigin"]
 builder.Services.AddCors(opts => opts.AddDefaultPolicy(policy => policy
     .WithOrigins(allowedOrigin)
     .AllowAnyMethod()
-    .AllowAnyHeader()));
+    .AllowAnyHeader()
+    .AllowCredentials()));
 
 var app = builder.Build();
 
@@ -66,7 +68,14 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseHttpMetrics();
-app.MapReverseProxy();
+
+// Deny by default: routes must opt out via "AuthorizationPolicy": "Anonymous" in
+// appsettings.json (identity-route for register/login, species-route/species-identify-route
+// which are intentionally public product surfaces). Previously the gateway configured JWT
+// auth but never enforced it, leaving enforcement entirely to downstream services with no
+// second layer (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.1).
+app.MapReverseProxy().RequireAuthorization();
+
 app.MapGet("/health", () => "ok");
 app.MapMetrics("/metrics");
 app.Run();

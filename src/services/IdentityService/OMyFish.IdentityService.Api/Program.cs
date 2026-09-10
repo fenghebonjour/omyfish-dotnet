@@ -49,6 +49,22 @@ if (builder.Environment.IsProduction() && (jwtSecret is null || jwtSecret.Starts
 jwtSecret ??= "dev-secret-change-in-production-min-32-chars";
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
 
+// Refresh token lives only in an httpOnly cookie now, never in the response body/localStorage
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3). Secure requires HTTPS, so it's off outside
+// Production to keep local/docker-compose dev (plain HTTP) working.
+const string RefreshCookieName = "refresh_token";
+var cookieSecure = builder.Environment.IsProduction();
+
+void SetRefreshCookie(HttpContext ctx, string token) =>
+    ctx.Response.Cookies.Append(RefreshCookieName, token, new CookieOptions
+    {
+        HttpOnly = true,
+        Secure = cookieSecure,
+        SameSite = SameSiteMode.Strict,
+        Expires = DateTimeOffset.UtcNow.AddDays(30),
+        Path = "/api/v1/auth",
+    });
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
     {
@@ -134,7 +150,7 @@ app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IUserRepository
         new UserDto(user.Id, user.Email, user.DisplayName, user.Role));
 });
 
-app.MapPost("/api/v1/auth/login", async (LoginRequest req, IUserRepository repo) =>
+app.MapPost("/api/v1/auth/login", async (LoginRequest req, HttpContext ctx, IUserRepository repo) =>
 {
     var user = await repo.FindByEmailAsync(req.Email);
     if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.HashedPassword))
@@ -143,17 +159,23 @@ app.MapPost("/api/v1/auth/login", async (LoginRequest req, IUserRepository repo)
         return Results.Forbid();
 
     var accessToken = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
-    var refreshToken = CreateRefreshJwt(user, signingKey);
-    return Results.Ok(new TokenResponse(accessToken, refreshToken, user.Id, user.Email, user.Role));
+    SetRefreshCookie(ctx, CreateRefreshJwt(user, signingKey));
+    return Results.Ok(new TokenResponse(accessToken, user.Id, user.Email, user.Role));
 });
 
-app.MapPost("/api/v1/auth/refresh", async (RefreshRequest req, IUserRepository repo) =>
+// Refresh token now travels only as an httpOnly cookie, never in the JSON body/localStorage
+// — a stolen 30-day token via XSS was a long-lived account takeover
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3).
+app.MapPost("/api/v1/auth/refresh", async (HttpContext ctx, IUserRepository repo) =>
 {
+    if (!ctx.Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken) || refreshToken is null)
+        return Results.Unauthorized();
+
     var handler = new JwtSecurityTokenHandler();
     ClaimsPrincipal principal;
     try
     {
-        principal = handler.ValidateToken(req.RefreshToken, new TokenValidationParameters
+        principal = handler.ValidateToken(refreshToken, new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = signingKey,
@@ -174,8 +196,14 @@ app.MapPost("/api/v1/auth/refresh", async (RefreshRequest req, IUserRepository r
     if (user is null || !user.IsActive) return Results.Unauthorized();
 
     var accessToken = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
-    var refreshToken = CreateRefreshJwt(user, signingKey);
-    return Results.Ok(new TokenResponse(accessToken, refreshToken, user.Id, user.Email, user.Role));
+    SetRefreshCookie(ctx, CreateRefreshJwt(user, signingKey));
+    return Results.Ok(new TokenResponse(accessToken, user.Id, user.Email, user.Role));
+});
+
+app.MapPost("/api/v1/auth/logout", (HttpContext ctx) =>
+{
+    ctx.Response.Cookies.Delete(RefreshCookieName);
+    return Results.Ok();
 });
 
 app.MapGet("/api/v1/auth/me", async (ClaimsPrincipal principal, IUserRepository repo) =>
@@ -350,8 +378,7 @@ record CheckoutRequest(string Plan);
 record GrantRequest(int? Days, string? Plan);
 record SubscriptionDto(string Status, string? Plan, DateTime? TrialEnd, DateTime? CurrentPeriodEnd);
 record LoginRequest(string Email, string Password);
-record RefreshRequest(string RefreshToken);
-record TokenResponse(string Token, string RefreshToken, Guid UserId, string Email, string Role);
+record TokenResponse(string Token, Guid UserId, string Email, string Role);
 record UserDto(Guid Id, string Email, string? DisplayName, string Role);
 record ApiKeyRequest(string Name);
 record ApiKeyResponse(Guid KeyId, string PlainKey, string Name);
