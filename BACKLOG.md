@@ -187,10 +187,14 @@ open, see its note below. Data layer/testing-CI/cleanup tiers are still open.
   tables in both databases. Do this as its own round, verified by actually
   triggering an identify/observation-create via `make build-up` and watching
   the resulting notification arrive — don't land it on a build-only check. (§2.3)
-- ~~No idempotency in NotificationService consumers~~ — fixed: `Notification`
-  now has a unique `SourceEventId` (the publisher's MassTransit `MessageId`);
-  `ObservationCreatedConsumer` skips on a redelivered id instead of inserting
-  a duplicate. Migration: `migrations/NotificationService/002_add_source_event_id.sql`. (§2.4)
+- ~~No idempotency in NotificationService consumers~~ — fixed and verified
+  2026-09-10 end-to-end (real observation → real notification, post-`make
+  build-up`): `Notification` now has a unique `SourceEventId` (the
+  publisher's MassTransit `MessageId`); `ObservationCreatedConsumer` skips on
+  a redelivered id instead of inserting a duplicate. Migration:
+  `migrations/NotificationService/002_add_source_event_id.sql`. **Hit the
+  exact §3.1 schema-drift failure mode during verification** — see the
+  `EnsureCreatedAsync` note below the Data layer section. (§2.4)
 - ~~DLQ/quorum-queue setup was documented in `CLAUDE.md` but not implemented~~
   — `CLAUDE.md` corrected instead of chasing an unverified custom `.dlq`
   suffix: NotificationService's two receive endpoints now use
@@ -204,7 +208,17 @@ open, see its note below. Data layer/testing-CI/cleanup tiers are still open.
 **Data layer (high):**
 - `EnsureCreatedAsync()` on every service startup competes with the raw-SQL
   migrations as a second, divergent schema source — and masks missing
-  migrations since it only creates schema on a DB that doesn't exist yet. (§3.1)
+  migrations since it only creates schema on a DB that doesn't exist yet.
+  **Confirmed in practice 2026-09-10**: adding `Notification.SourceEventId`
+  (§2.4 above) had no effect on the already-existing `notifications` table
+  after a `make build-up` on top of old Postgres data — `EnsureCreatedAsync`
+  silently no-oped, every notification read/write threw
+  `42703: column n.source_event_id does not exist`, and the triggering event
+  quietly died in MassTransit's fault queue with no user-visible error. Fixed
+  that instance by hand-applying the new migration's `ALTER TABLE` via
+  `make shell-postgres`. This will keep happening for every future column/table
+  change until §3.1 itself is fixed — worth prioritizing over the remaining
+  Testing/CI and Cleanup items below. (§3.1)
 - `make migrate` never applies `migrations/IdentityService/002_add_subscriptions.sql`. (§3.2)
 - PostGIS `location` column/GIST index/`observations_within_radius()`
   function are all dead — `ObservationDbContext` ignores `Location`, so
