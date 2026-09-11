@@ -164,6 +164,7 @@ var app = builder.Build();
 var migrator = DeployChanges.To
     .PostgresqlDatabase(builder.Configuration.GetConnectionString("Default"))
     .WithScriptsEmbeddedInAssembly(typeof(Program).Assembly, s => s.StartsWith("Migrations.") && s.EndsWith(".sql"))
+    .JournalToPostgresqlTable("public", "schemaversions_species")
     .LogToConsole()
     .Build();
 var migrationResult = migrator.PerformUpgrade();

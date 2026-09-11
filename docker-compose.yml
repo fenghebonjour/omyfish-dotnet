@@ -126,8 +126,8 @@ services:
 
   identity-service:
     build:
-      context: ./src
-      dockerfile: services/IdentityService/OMyFish.IdentityService.Api/Dockerfile
+      context: .
+      dockerfile: src/services/IdentityService/OMyFish.IdentityService.Api/Dockerfile
     ports:
       - "8081:8080"
     environment:
@@ -141,8 +141,8 @@ services:
 
   species-service:
     build:
-      context: ./src
-      dockerfile: services/SpeciesService/OMyFish.SpeciesService.Api/Dockerfile
+      context: .
+      dockerfile: src/services/SpeciesService/OMyFish.SpeciesService.Api/Dockerfile
     ports:
       - "8082:8080"
     environment:
@@ -167,8 +167,8 @@ services:
 
   observation-service:
     build:
-      context: ./src
-      dockerfile: services/ObservationService/OMyFish.ObservationService.Api/Dockerfile
+      context: .
+      dockerfile: src/services/ObservationService/OMyFish.ObservationService.Api/Dockerfile
     ports:
       - "8083:8080"
     environment:
@@ -189,8 +189,8 @@ services:
 
   notification-service:
     build:
-      context: ./src
-      dockerfile: services/NotificationService/OMyFish.NotificationService/Dockerfile
+      context: .
+      dockerfile: src/services/NotificationService/OMyFish.NotificationService/Dockerfile
     ports:
       - "8084:8080"
     environment:

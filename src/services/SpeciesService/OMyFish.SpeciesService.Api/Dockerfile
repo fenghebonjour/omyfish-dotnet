@@ -1,18 +1,18 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj shared/OMyFish.Shared.BuildingBlocks/
-COPY shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj shared/OMyFish.Shared.Contracts/
-COPY services/SpeciesService/OMyFish.SpeciesService.Domain/OMyFish.SpeciesService.Domain.csproj services/SpeciesService/OMyFish.SpeciesService.Domain/
-COPY services/SpeciesService/OMyFish.SpeciesService.Application/OMyFish.SpeciesService.Application.csproj services/SpeciesService/OMyFish.SpeciesService.Application/
-COPY services/SpeciesService/OMyFish.SpeciesService.Infrastructure/OMyFish.SpeciesService.Infrastructure.csproj services/SpeciesService/OMyFish.SpeciesService.Infrastructure/
-COPY services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj services/SpeciesService/OMyFish.SpeciesService.Api/
+COPY src/shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj src/shared/OMyFish.Shared.BuildingBlocks/
+COPY src/shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj src/shared/OMyFish.Shared.Contracts/
+COPY src/services/SpeciesService/OMyFish.SpeciesService.Domain/OMyFish.SpeciesService.Domain.csproj src/services/SpeciesService/OMyFish.SpeciesService.Domain/
+COPY src/services/SpeciesService/OMyFish.SpeciesService.Application/OMyFish.SpeciesService.Application.csproj src/services/SpeciesService/OMyFish.SpeciesService.Application/
+COPY src/services/SpeciesService/OMyFish.SpeciesService.Infrastructure/OMyFish.SpeciesService.Infrastructure.csproj src/services/SpeciesService/OMyFish.SpeciesService.Infrastructure/
+COPY src/services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj src/services/SpeciesService/OMyFish.SpeciesService.Api/
 
-RUN dotnet restore services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj
+RUN dotnet restore src/services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj
 
 COPY . .
 
-RUN dotnet publish services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj \
+RUN dotnet publish src/services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj \
     -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

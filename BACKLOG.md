@@ -209,9 +209,9 @@ its note below. §3.3 (PostGIS backfill), testing/CI, and cleanup are still open
 
 **Data layer (high):**
 - ~~`EnsureCreatedAsync()` on every service startup competed with the
-  raw-SQL migrations as a second, divergent schema source~~ — **fixed
-  2026-09-10, NOT YET VERIFIED against a real build (no Docker in this dev
-  environment)**. Concretely bit us in practice first: adding
+  raw-SQL migrations as a second, divergent schema source~~ — **fixed and
+  VERIFIED 2026-09-10 against a real `make build-up` on the existing
+  (non-empty) dev Postgres.** Concretely bit us in practice first: adding
   `Notification.SourceEventId` (§2.4) had no effect on the already-existing
   `notifications` table after `make build-up` on top of old Postgres data —
   `EnsureCreatedAsync` silently no-oped, every notification read/write threw
@@ -224,16 +224,37 @@ its note below. §3.3 (PostGIS backfill), testing/CI, and cleanup are still open
   `EnsureCreatedAsync`, failing fast if a migration fails. Also made the
   species/observation `001_*.sql` files idempotent-safe (`CREATE TABLE/INDEX
   IF NOT EXISTS`, `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER`) since they
-  weren't before — needed for DbUp's first-ever run against **your existing
-  dev DB specifically**, which already has these tables from prior
-  `EnsureCreatedAsync` runs. **Please verify with `make build-up` against
-  your current (non-empty) Postgres data** — watch `make logs
-  service=identity-service` (or any service) for "Database migration
-  failed" on startup; if you see it, paste the log. **Known limitation, not
-  solved here**: no distributed lock across replicas — deployments with
-  `replicas: 2` could run DbUp concurrently on startup. Same risk profile as
-  the old `EnsureCreatedAsync` behavior (not worse), just flagging it's not
-  a complete fix for multi-replica prod. Migration files, once applied
+  weren't before — needed for DbUp's first-ever run against the existing
+  dev DB, which already had these tables from prior `EnsureCreatedAsync` runs.
+  First-round verification (2026-09-10) surfaced two further bugs in the
+  original fix itself, both now fixed:
+  1. The 4 services' Dockerfiles build with `context: ./src` in
+     `docker-compose.yml`, but `migrations/` lives one level above `src/` at
+     the repo root — the csproj's `EmbeddedResource` glob
+     (`..\..\..\..\migrations\<Service>\*.sql`, relative to the csproj) walked
+     past the copied build context and silently matched zero files inside
+     Docker, so DbUp found no scripts and no-oped exactly like the old
+     `EnsureCreatedAsync` bug this was meant to fix. `dotnet build`/`dotnet
+     test` never caught it because those run from the full repo checkout, not
+     the Docker build context. Fixed by pointing all 4 services' `context` at
+     the repo root (`.`) with `dockerfile: src/services/...` paths, and
+     prefixing `src/` onto every `COPY`/`RUN dotnet` path in their
+     Dockerfiles; added a root `.dockerignore` (`.git`, frontend
+     `node_modules`/`.next`, `**/bin`, `**/obj`) to keep the larger build
+     context lean.
+  2. All 4 services connect to the same physical `omyfish` database and none
+     customized DbUp's journal table, so they raced to create the same
+     default `schemaversions` table on concurrent startup — the loser threw
+     `23505: duplicate key value violates unique constraint
+     "pg_class_relname_nsp_index"` and crashed. This only surfaced once fix
+     #1 made DbUp actually try to create the table. Fixed by giving each
+     service its own journal table via
+     `.JournalToPostgresqlTable("public", "schemaversions_<service>")`.
+  **Known limitation, not solved here**: no distributed lock across replicas
+  of the *same* service — deployments with `replicas: 2` for one service
+  could still run DbUp concurrently on startup. Same risk profile as the old
+  `EnsureCreatedAsync` behavior (not worse), just flagging it's not a
+  complete fix for multi-replica prod. Migration files, once applied
   anywhere by DbUp, must never be edited again — add a new numbered file
   instead (documented in `CLAUDE.md`). (§3.1)
 - ~~`make migrate` never applies

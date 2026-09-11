@@ -1,17 +1,17 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj shared/OMyFish.Shared.BuildingBlocks/
-COPY shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj shared/OMyFish.Shared.Contracts/
-COPY services/IdentityService/OMyFish.IdentityService.Domain/OMyFish.IdentityService.Domain.csproj services/IdentityService/OMyFish.IdentityService.Domain/
-COPY services/IdentityService/OMyFish.IdentityService.Infrastructure/OMyFish.IdentityService.Infrastructure.csproj services/IdentityService/OMyFish.IdentityService.Infrastructure/
-COPY services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj services/IdentityService/OMyFish.IdentityService.Api/
+COPY src/shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj src/shared/OMyFish.Shared.BuildingBlocks/
+COPY src/shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj src/shared/OMyFish.Shared.Contracts/
+COPY src/services/IdentityService/OMyFish.IdentityService.Domain/OMyFish.IdentityService.Domain.csproj src/services/IdentityService/OMyFish.IdentityService.Domain/
+COPY src/services/IdentityService/OMyFish.IdentityService.Infrastructure/OMyFish.IdentityService.Infrastructure.csproj src/services/IdentityService/OMyFish.IdentityService.Infrastructure/
+COPY src/services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj src/services/IdentityService/OMyFish.IdentityService.Api/
 
-RUN dotnet restore services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj
+RUN dotnet restore src/services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj
 
 COPY . .
 
-RUN dotnet publish services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj \
+RUN dotnet publish src/services/IdentityService/OMyFish.IdentityService.Api/OMyFish.IdentityService.Api.csproj \
     -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

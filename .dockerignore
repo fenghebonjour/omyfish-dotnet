@@ -1,0 +1,5 @@
+.git
+frontend/omyfish-web/node_modules
+frontend/omyfish-web/.next
+**/bin
+**/obj
