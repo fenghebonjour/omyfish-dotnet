@@ -1,1 +1,510 @@
-// placeholder
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: api-gateway
+spec:
+  replicas: {{ .Values.replicaCount.apiGateway }}
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      # Matches the Dockerfile's `USER $APP_UID` — fails fast if the image ever
+      # regresses to running as root (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+      securityContext:
+        runAsNonRoot: true
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api-gateway
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.image.apiGateway.repository }}:{{ .Values.image.apiGateway.tag }}"
+          imagePullPolicy: {{ .Values.image.apiGateway.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: jwt-secret
+            - name: Services__Identity
+              value: "http://identity-service:8080"
+            - name: Services__Species
+              value: "http://species-service:8080"
+            - name: Services__Observation
+              value: "http://observation-service:8080"
+          resources:
+            {{- toYaml .Values.resources.apiGateway | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: identity-service
+spec:
+  replicas: {{ .Values.replicaCount.identityService }}
+  selector:
+    matchLabels:
+      app: identity-service
+  template:
+    metadata:
+      labels:
+        app: identity-service
+    spec:
+      # Matches the Dockerfile's `USER $APP_UID` — fails fast if the image ever
+      # regresses to running as root (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+      securityContext:
+        runAsNonRoot: true
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: identity-service
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.image.identityService.repository }}:{{ .Values.image.identityService.tag }}"
+          imagePullPolicy: {{ .Values.image.identityService.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: db-connection-string
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: jwt-secret
+          resources:
+            {{- toYaml .Values.resources.identityService | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: identity-service
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: species-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: species-service
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount.speciesService }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: species-service
+  template:
+    metadata:
+      labels:
+        app: species-service
+    spec:
+      # Matches the Dockerfile's `USER $APP_UID` — fails fast if the image ever
+      # regresses to running as root (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+      securityContext:
+        runAsNonRoot: true
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: species-service
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.image.speciesService.repository }}:{{ .Values.image.speciesService.tag }}"
+          imagePullPolicy: {{ .Values.image.speciesService.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: db-connection-string
+            - name: RabbitMq__Host
+              value: "rabbitmq"
+            - name: RabbitMq__Username
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-username
+            - name: RabbitMq__Password
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-password
+            - name: AIService__BaseUrl
+              value: "http://ai-service:8000"
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: jwt-secret
+            - name: Seeding__MetadataPath
+              value: "/metadata/fish_info.json"
+          volumeMounts:
+            - name: fish-metadata
+              mountPath: /metadata
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources.speciesService | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: fish-metadata
+          configMap:
+            name: fish-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: species-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: species-service
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observation-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: observation-service
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount.observationService }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: observation-service
+  template:
+    metadata:
+      labels:
+        app: observation-service
+    spec:
+      # Matches the Dockerfile's `USER $APP_UID` — fails fast if the image ever
+      # regresses to running as root (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+      securityContext:
+        runAsNonRoot: true
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: observation-service
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.image.observationService.repository }}:{{ .Values.image.observationService.tag }}"
+          imagePullPolicy: {{ .Values.image.observationService.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: db-connection-string
+            - name: RabbitMq__Host
+              value: "rabbitmq"
+            - name: RabbitMq__Username
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-username
+            - name: RabbitMq__Password
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-password
+            - name: MinIO__Endpoint
+              value: "minio:9000"
+            - name: MinIO__AccessKey
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: minio-access-key
+            - name: MinIO__SecretKey
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: minio-secret-key
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: jwt-secret
+          resources:
+            {{- toYaml .Values.resources.observationService | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: observation-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: observation-service
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-service
+spec:
+  replicas: {{ .Values.replicaCount.notificationService }}
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      # Matches the Dockerfile's `USER $APP_UID` — fails fast if the image ever
+      # regresses to running as root (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.4).
+      securityContext:
+        runAsNonRoot: true
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: notification-service
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.image.notificationService.repository }}:{{ .Values.image.notificationService.tag }}"
+          imagePullPolicy: {{ .Values.image.notificationService.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: db-connection-string
+            - name: RabbitMq__Host
+              value: "rabbitmq"
+            - name: RabbitMq__Username
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-username
+            - name: RabbitMq__Password
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: rabbitmq-password
+            - name: Jwt__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: jwt-secret
+          resources:
+            {{- toYaml .Values.resources.notificationService | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ai-service
+spec:
+  replicas: {{ .Values.replicaCount.aiService }}
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ai-service
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.image.aiService.repository }}:{{ .Values.image.aiService.tag }}"
+          imagePullPolicy: {{ .Values.image.aiService.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_PATH
+              value: "/checkpoints/best.pt"
+            - name: CLASSES_PATH
+              value: "/checkpoints/classes.json"
+            - name: METADATA_PATH
+              value: "/metadata/fish_info.json"
+          volumeMounts:
+            - name: model-checkpoints
+              mountPath: /checkpoints
+              readOnly: true
+            - name: fish-metadata
+              mountPath: /metadata
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources.aiService | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+      volumes:
+        - name: model-checkpoints
+          persistentVolumeClaim:
+            claimName: ai-model-pvc
+        - name: fish-metadata
+          configMap:
+            name: fish-metadata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: ai-service
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

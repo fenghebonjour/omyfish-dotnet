@@ -1,1 +1,6 @@
-// placeholder
+apiVersion: v2
+name: omyfish
+description: Helm chart for the OMyFish .NET microservices platform (API gateway, identity/species/observation/notification services, AI service)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

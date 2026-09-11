@@ -15,12 +15,20 @@ image:
     repository: omyfish/api-gateway-dotnet
     tag: "latest"
     pullPolicy: IfNotPresent
+  identityService:
+    repository: omyfish/identity-service-dotnet
+    tag: "latest"
+    pullPolicy: IfNotPresent
   speciesService:
     repository: omyfish/species-service-dotnet
     tag: "latest"
     pullPolicy: IfNotPresent
   observationService:
     repository: omyfish/observation-service-dotnet
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  notificationService:
+    repository: omyfish/notification-service-dotnet
     tag: "latest"
     pullPolicy: IfNotPresent
   aiService:
@@ -36,6 +44,13 @@ resources:
     limits:
       cpu: 500m
       memory: 512Mi
+  identityService:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
   speciesService:
     requests:
       cpu: 500m
@@ -50,6 +65,13 @@ resources:
     limits:
       cpu: 500m
       memory: 512Mi
+  notificationService:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
   aiService:
     requests:
       cpu: 1000m
