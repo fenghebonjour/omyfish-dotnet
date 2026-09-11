@@ -146,19 +146,22 @@ needs, so it doesn't belong on Postgres. Port the same move here:
 
 ---
 
-## [~] F — Weakness audit follow-up (security, resilience, data consistency)
+## [x] F — Weakness audit follow-up (security, resilience, data consistency)
 
-**Status:** IN PROGRESS (added 2026-09-10). Findings from a senior-dev-style
-codebase audit; full explanation + fix snippets in `docs/WEAKNESS_AUDIT.md`.
-Grouped by priority. Landed 2026-09-10: quick/low-risk tier (commit d06c4db),
-security tier (commit cfb942e), most of the resilience tier (idempotency +
-quorum queues, commit 01ac2b6), and §3.1/§3.2/§3.4/§3.3 of the data layer
-tier. Landed and verified 2026-09-11: the outbox pattern (§2.3), via a real
-`make build-up` — see its note below. Also landed 2026-09-11: part of the
-Testing/CI tier (ApiGateway tests, Species/Observation repository
-integration tests) — see its note below for what's still open there. Cleanup
-tier done 2026-09-11 (Helm chart templated; the other two cleanup items
-turned out already stale). Only the rest of Testing/CI is still open.
+**Status:** DONE (added 2026-09-10, completed 2026-09-11). Findings from a
+senior-dev-style codebase audit; full explanation + fix snippets in
+`docs/WEAKNESS_AUDIT.md`. Grouped by priority. Landed 2026-09-10: quick/
+low-risk tier (commit d06c4db), security tier (commit cfb942e), most of the
+resilience tier (idempotency + quorum queues, commit 01ac2b6), and
+§3.1/§3.2/§3.4/§3.3 of the data layer tier. Landed and verified 2026-09-11:
+the outbox pattern (§2.3), via a real `make build-up`; the rest of the
+Testing/CI tier (repository-level tests for all 4 services,
+`AIServiceClient`, `RabbitMQPublisher`s, and endpoint-level
+`WebApplicationFactory` + real-Testcontainers-broker tests for
+SpeciesService/ObservationService, plus the CI workflow itself gaining
+format/frontend-build/docker-build/dependency-scan jobs); and the Cleanup
+tier (Helm chart templated; the other two cleanup items turned out already
+stale). Every sub-tier is now closed — see each section below for detail.
 
 **Security (critical) — DONE 2026-09-10:**
 - ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
@@ -339,7 +342,7 @@ turned out already stale). Only the rest of Testing/CI is still open.
   the downstream service isn't running in the test host — is a different,
   expected failure mode, not what these tests check).
 - ~~No Infrastructure-layer tests anywhere (repositories, `AIServiceClient`,
-  publishers)~~ — partially fixed 2026-09-11: real-database integration
+  publishers)~~ — fixed 2026-09-11: real-database integration
   tests added to `OMyFish.SpeciesService.Tests`/`OMyFish.ObservationService.Tests`
   (`PostgresFixture`, `Testcontainers.PostgreSql` on the actual
   `postgis/postgis:16-3.4-alpine` image, migrated with this repo's real raw
@@ -392,11 +395,38 @@ turned out already stale). Only the rest of Testing/CI is still open.
   event added without updating the publisher would only surface live. 4 new
   tests, all passing; full solution suite re-verified at 92 tests total.
 
-  **Still open:** endpoint-level (not repository-level) slice tests for
-  SpeciesService/ObservationService's own Api projects (see the
-  WebApplicationFactory follow-up above — needs Testcontainers or
-  MassTransit hosted-service mocking since their endpoints publish through
-  the outbox).
+  **Endpoint-level slice tests — DONE 2026-09-11.** Closed the last open
+  item in this tier and the WebApplicationFactory follow-up above. Went
+  with real Testcontainers (Postgres + RabbitMQ) over MassTransit
+  hosted-service mocking — the whole point was proving the outbox actually
+  drains to a real broker, which an in-memory test harness can't show.
+  - Added `public partial class Program;` to both
+    `SpeciesService.Api`/`ObservationService.Api` (same fix the ApiGateway
+    tests needed — top-level statements generate it `internal` otherwise).
+  - Added a `RabbitMQ__Port`/`RabbitMQ:Port` config key (default `5672`,
+    unchanged behavior in production) to both services' `cfg.Host(...)`
+    call — needed because `RabbitMqBuilder` maps the broker to a random
+    host port; there was previously no way to point the app at a
+    non-default port at all.
+  - `ObservationApiFixture`/`SpeciesApiFixture` (`WebApplicationFactory<Program>`
+    + `Testcontainers.PostgreSql` + `Testcontainers.RabbitMq`, explicit
+    `guest`/`guest` credentials — `RabbitMqBuilder` generates random ones by
+    default, which cost a debugging round-trip here: `ACCESS_REFUSED` on
+    first attempt). `ObservationEndpointsTests.cs`: 401 with no token,
+    `GET .../geojson` is public, `GET .../nearby` validates `radiusKm`, and
+    the main case — `POST /api/v1/observations` with a real JWT persists
+    the row *and* drains the real `outbox_message_observation` table to 0,
+    proving actual delivery to the broker, not just a DB write. No fakes
+    needed here — create doesn't touch MinIO/AI at all (A1's contract).
+  - `SpeciesApiFixture` additionally fakes `IAIServiceClient`/
+    `IStorageService` via `ConfigureTestServices` (the two genuinely-external
+    dependencies `/identify` has) while keeping DB/broker real.
+    `IdentificationEndpointTests.cs`: no-image returns 400, and the main
+    case — `POST /api/v1/species/identify` persists species+prediction rows
+    and drains `outbox_message_species` to 0 the same way.
+  - Verified via `dotnet test omyfish-dotnet.slnx`: 98 tests pass
+    solution-wide; the 6 new endpoint tests re-run 3× clean (no flakiness
+    observed from container timing).
 - ~~CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
   (no `npm test` script exists at all), no image build, no dependency scan~~
   — fixed 2026-09-11: `.github/workflows/ci.yml` gained 4 more jobs

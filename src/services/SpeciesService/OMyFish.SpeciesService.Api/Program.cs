@@ -90,7 +90,9 @@ builder.Services.AddMassTransit(x =>
         var host = builder.Configuration["RabbitMQ__Host"]
                 ?? builder.Configuration["RabbitMQ:Host"]
                 ?? "rabbitmq";
-        cfg.Host(host, "/", h =>
+        var port = ushort.Parse(builder.Configuration["RabbitMQ__Port"]
+                ?? builder.Configuration["RabbitMQ:Port"] ?? "5672");
+        cfg.Host(host, port, "/", h =>
         {
             h.Username(builder.Configuration["RabbitMQ__Username"]
                     ?? builder.Configuration["RabbitMQ:Username"] ?? "guest");
@@ -240,6 +242,11 @@ app.MapBiteScoreEndpoints();
 app.MapRegsEndpoints();
 
 app.Run();
+
+// Exposes the top-level-statements Program class to WebApplicationFactory<Program> in
+// OMyFish.SpeciesService.Tests — top-level statements otherwise generate it `internal`,
+// which isn't visible across assemblies.
+public partial class Program;
 
 // Logs and turns any exception the endpoints/middleware don't already handle into a clean
 // JSON 5xx response, instead of ASP.NET Core's default unhandled-exception behavior
