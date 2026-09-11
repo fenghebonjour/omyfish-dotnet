@@ -260,9 +260,21 @@ its note below. §3.3 (PostGIS backfill), testing/CI, and cleanup are still open
 - ~~`make migrate` never applies
   `migrations/IdentityService/002_add_subscriptions.sql`~~ — fixed in the
   quick-win tier (commit d06c4db). (§3.2)
-- PostGIS `location` column/GIST index/`observations_within_radius()`
+- ~~PostGIS `location` column/GIST index/`observations_within_radius()`
   function are all dead — `ObservationDbContext` ignores `Location`, so
-  coordinates only ever live in plain lat/lon columns. Still open. (§3.3)
+  coordinates only ever live in plain lat/lon columns~~ — fixed 2026-09-10.
+  Rather than wiring NetTopologySuite through EF (which would mean every
+  future write path, including any future raw-SQL fix, has to remember to
+  keep `location` in sync with `latitude`/`longitude`), migration
+  `003_backfill_location.sql` adds a `BEFORE INSERT OR UPDATE` trigger that
+  derives `location` from `latitude`/`longitude` at the DB layer — the
+  single source of truth stays the two scalar columns the app already reads
+  and writes, and `location` can't drift out of sync regardless of what
+  writes the row. The same migration backfills existing rows. To actually
+  exercise the previously-dead GIST index and `observations_within_radius()`
+  function instead of just populating a column nothing reads, added
+  `GET /api/v1/observations/nearby?lat=&lon=&radiusKm=` (public, like
+  `/geojson`) — calls the SQL function via `SqlQueryRaw`. (§3.3)
 - ~~N+1 query in `IdentifyFishCommandHandler`~~ — fixed in the quick-win tier
   (commit d06c4db): batched species lookup instead of one query per AI
   prediction. (§3.4)

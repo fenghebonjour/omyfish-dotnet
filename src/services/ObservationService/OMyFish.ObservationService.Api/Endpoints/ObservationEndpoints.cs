@@ -76,6 +76,22 @@ public static class ObservationEndpoints
             return Results.Ok(result);
         })
         .WithName("GetObservationsGeoJson");
+
+        // Public radius search, e.g. "what's been caught near me"
+        app.MapGet("/api/v1/observations/nearby", async (
+            double lat,
+            double lon,
+            IMediator mediator,
+            double radiusKm = 10,
+            CancellationToken ct = default) =>
+        {
+            if (radiusKm <= 0) return Results.BadRequest("radiusKm must be positive.");
+            if (lat < -90 || lat > 90) return Results.BadRequest("lat must be between -90 and 90.");
+            if (lon < -180 || lon > 180) return Results.BadRequest("lon must be between -180 and 180.");
+            var result = await mediator.Send(new GetNearbyObservationsQuery(lat, lon, radiusKm), ct);
+            return Results.Ok(result);
+        })
+        .WithName("GetNearbyObservations");
     }
 
     private static Guid GetUserId(HttpContext ctx)

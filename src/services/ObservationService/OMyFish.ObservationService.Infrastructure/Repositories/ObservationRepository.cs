@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OMyFish.ObservationService.Application.Interfaces;
+using OMyFish.ObservationService.Application.Queries;
 using OMyFish.ObservationService.Domain.Entities;
 using OMyFish.ObservationService.Infrastructure.Persistence;
 
@@ -25,6 +26,23 @@ public class ObservationRepository : IObservationRepository
             .AsNoTracking()
             .Where(o => o.Latitude != null && o.Longitude != null)
             .OrderByDescending(o => o.ObservedAt)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<NearbyObservationDto>> GetNearbyAsync(
+        double latitude, double longitude, double radiusKm, CancellationToken ct = default)
+        => await _db.Database.SqlQueryRaw<NearbyObservationDto>(
+                """
+                SELECT
+                    id AS "Id",
+                    species_name AS "SpeciesName",
+                    top_confidence AS "TopConfidence",
+                    latitude AS "Latitude",
+                    longitude AS "Longitude",
+                    observed_at AS "ObservedAt",
+                    distance_km AS "DistanceKm"
+                FROM observations_within_radius({0}, {1}, {2})
+                """,
+                latitude, longitude, radiusKm)
             .ToListAsync(ct);
 
     public async Task AddAsync(Observation observation, CancellationToken ct = default)
