@@ -156,8 +156,9 @@ quorum queues, commit 01ac2b6), and §3.1/§3.2/§3.4/§3.3 of the data layer
 tier. Landed and verified 2026-09-11: the outbox pattern (§2.3), via a real
 `make build-up` — see its note below. Also landed 2026-09-11: part of the
 Testing/CI tier (ApiGateway tests, Species/Observation repository
-integration tests) — see its note below for what's still open there.
-Cleanup is still open.
+integration tests) — see its note below for what's still open there. Cleanup
+tier done 2026-09-11 (Helm chart templated; the other two cleanup items
+turned out already stale). Only the rest of Testing/CI is still open.
 
 **Security (critical) — DONE 2026-09-10:**
 - ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
@@ -346,18 +347,55 @@ Cleanup is still open.
   §2.3's `predictions.scientific_name NOT NULL` mismatch through undetected
   — confirmed by temporarily reverting that fix and watching the new test
   fail with the identical `23502` error, then restoring it and watching it
-  pass. `AIServiceClient` and the `RabbitMQPublisher`s still have no tests.
+  pass. Extended 2026-09-11 to `OMyFish.IdentityService.Tests` (same
+  `PostgresFixture` pattern, migrated with `migrations/IdentityService`) and
+  `OMyFish.NotificationService.Tests` — closing the "same treatment for
+  IdentityService/NotificationService" half of the
+  WebApplicationFactory-slice-tests follow-up above. New coverage: `UserRepository`
+  round-trip + the unique email index actually throwing `DbUpdateException`
+  on a duplicate (`UserRepositoryIntegrationTests.cs`); `ApiKeyRepository`
+  round-trip, the unique `key_hash` index, and the real `ON DELETE CASCADE`
+  from `api_keys` to `users` (`ApiKeyRepositoryIntegrationTests.cs`);
+  `NotificationDbContext` round-trip and the unique `source_event_id` index
+  from §2.4's migration 002 actually being enforced at the DB layer, not
+  just by the consumer's own `AnyAsync` check
+  (`NotificationDbContextIntegrationTests.cs`, alongside the existing
+  InMemory-provider consumer tests, which don't enforce real constraints).
+  All 5 test projects pass end-to-end (80 tests total) via `dotnet test
+  omyfish-dotnet.slnx`, Docker available this session. `AIServiceClient` and
+  the `RabbitMQPublisher`s still have no tests; endpoint-level (not
+  repository-level) slice tests for SpeciesService/ObservationService's own
+  Api projects are also still open (see the WebApplicationFactory follow-up
+  above — needs Testcontainers or MassTransit hosted-service mocking since
+  their endpoints publish through the outbox).
 - CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
   (no `npm test` script exists at all), no image build, no dependency scan.
   `ubuntu-latest` GitHub-hosted runners have Docker preinstalled, so the new
   Testcontainers-based tests need no CI changes to run — not verified against
   actual GitHub Actions in this session, only locally.
 
-**Cleanup (low):**
-- `AddOMyFishTelemetry` shared extension is dead code — never called, every
-  service copy-pastes the same OTel setup inline instead.
-- Stray `{Consumers}`/`{Endpoints}` scaffold directories (literal braces in
-  the name) in NotificationService, ObservationService.Api, SpeciesService.Api.
-- Helm chart's `templates/deployment.yaml`/`hpa.yaml`/`Chart.yaml` are
-  literal `// placeholder` — `helm install` deploys nothing despite a
-  fully-authored `values.yaml`.
+**Cleanup (low) — DONE 2026-09-11:**
+- ~~`AddOMyFishTelemetry` shared extension is dead code~~ — turned out to be
+  stale: `TelemetryExtensions.cs` existed in the initial scaffold commit
+  (6c15ce1) but was already removed by the time of this session, with no
+  `AddOMyFishTelemetry` references left anywhere in `src/`. No action needed;
+  each service's inline OTel setup in `Program.cs` is the current (and only)
+  approach.
+- ~~Stray `{Consumers}`/`{Endpoints}` scaffold directories~~ — same as above,
+  already gone from the initial scaffold commit onward; none found in `src/`.
+- ~~Helm chart's `templates/deployment.yaml`/`hpa.yaml`/`Chart.yaml` are
+  literal `// placeholder`~~ — fixed: all three authored for real, mirroring
+  `infrastructure/kubernetes/services/*.yaml` and `hpa/*.yaml` (same env vars,
+  probes, resource shapes, `runAsNonRoot`/`allowPrivilegeEscalation: false`
+  security contexts from §1.4) but templatized against `values.yaml` — image
+  repo/tag/pullPolicy, `global.imageRegistry` prefix, `global.imagePullSecrets`,
+  replica counts, resource requests/limits, and `{{ .Release.Namespace }}`
+  instead of the hardcoded `omyfish` namespace. `values.yaml` was also missing
+  `image`/`resources` entries for `identityService`/`notificationService`
+  despite having `replicaCount` entries for both — filled in to match the raw
+  manifests' sizing. `species-service`/`observation-service` Deployments omit
+  `replicas` when `autoscaling.enabled` so the HPA (also newly templatized
+  from `values.yaml`'s `autoscaling.*` block) owns replica count, matching
+  common Helm convention. Verified with `helm lint` (0 failures) and `helm
+  template` (all 14 resources — 6 Deployments, 6 Services, 2 HPAs — render as
+  valid YAML); not verified against a real cluster (no `helm install` run).
