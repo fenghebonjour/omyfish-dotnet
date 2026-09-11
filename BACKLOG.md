@@ -85,12 +85,18 @@ as a follow-up below.
 avoids any gateway config change. Same correction applies to Java's and
 python-web's BACKLOG entries.
 
-## [ ] Follow-up — WebApplicationFactory HTTP-level slice tests
+## [~] Follow-up — WebApplicationFactory HTTP-level slice tests
 
-**Status:** NOT STARTED. Deferred out of A2 (see above). Needs either
-Testcontainers.PostgreSql or per-service MassTransit hosted-service mocking to
-avoid hitting real Postgres/RabbitMQ in tests — worth a dedicated session
-rather than folding into the family-alignment pass.
+**Status:** STARTED 2026-09-11 (BACKLOG.md item F's Testing/CI tier — see
+its note for what shipped: ApiGateway auth-enforcement tests via
+`WebApplicationFactory<Program>`, and real-Postgres repository integration
+tests via `Testcontainers.PostgreSql` for SpeciesService/ObservationService).
+Still open: the same treatment for IdentityService/NotificationService, and
+endpoint-level (not just repository-level) slice tests for
+SpeciesService/ObservationService's own Api projects — those still need
+either Testcontainers or per-service MassTransit hosted-service mocking to
+avoid a real RabbitMQ dependency, since their endpoints publish through the
+outbox. Worth its own session rather than folding in opportunistically.
 
 ---
 
@@ -148,7 +154,10 @@ Grouped by priority. Landed 2026-09-10: quick/low-risk tier (commit d06c4db),
 security tier (commit cfb942e), most of the resilience tier (idempotency +
 quorum queues, commit 01ac2b6), and §3.1/§3.2/§3.4/§3.3 of the data layer
 tier. Landed and verified 2026-09-11: the outbox pattern (§2.3), via a real
-`make build-up` — see its note below. Testing/CI and cleanup are still open.
+`make build-up` — see its note below. Also landed 2026-09-11: part of the
+Testing/CI tier (ApiGateway tests, Species/Observation repository
+integration tests) — see its note below for what's still open there.
+Cleanup is still open.
 
 **Security (critical) — DONE 2026-09-10:**
 - ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
@@ -316,13 +325,33 @@ tier. Landed and verified 2026-09-11: the outbox pattern (§2.3), via a real
   prediction. (§3.4)
 
 **Testing/CI (medium):**
-- ApiGateway has zero tests; no Infrastructure-layer tests anywhere
-  (repositories, `AIServiceClient`, publishers); no HTTP-level endpoint
-  tests — this is the same gap as the existing "WebApplicationFactory
-  HTTP-level slice tests" follow-up above, not a new item, just re-flagged
-  because it's exactly what would have caught §1.1/§1.2.
+- ~~ApiGateway has zero tests~~ — fixed 2026-09-11: new
+  `tests/OMyFish.ApiGateway.Tests` project, `WebApplicationFactory<Program>`
+  against the real HTTP pipeline (not just config parsing) — the same gap as
+  the "WebApplicationFactory HTTP-level slice tests" follow-up above, and
+  exactly the kind of wiring bug that caused §1.1. Needed `public partial
+  class Program;` added to `ApiGateway/Program.cs` (top-level statements
+  generate that class `internal` otherwise, invisible cross-assembly). Tests
+  cover: default-protected routes return 401 with no token; the same routes
+  don't with a valid one; `AuthorizationPolicy: Anonymous` routes aren't
+  rejected by auth either way (whatever happens after — a 502 here, since
+  the downstream service isn't running in the test host — is a different,
+  expected failure mode, not what these tests check).
+- ~~No Infrastructure-layer tests anywhere (repositories, `AIServiceClient`,
+  publishers)~~ — partially fixed 2026-09-11: real-database integration
+  tests added to `OMyFish.SpeciesService.Tests`/`OMyFish.ObservationService.Tests`
+  (`PostgresFixture`, `Testcontainers.PostgreSql` on the actual
+  `postgis/postgis:16-3.4-alpine` image, migrated with this repo's real raw
+  SQL — not EF's model). These specifically close the exact gap that let
+  §2.3's `predictions.scientific_name NOT NULL` mismatch through undetected
+  — confirmed by temporarily reverting that fix and watching the new test
+  fail with the identical `23502` error, then restoring it and watching it
+  pass. `AIServiceClient` and the `RabbitMQPublisher`s still have no tests.
 - CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
   (no `npm test` script exists at all), no image build, no dependency scan.
+  `ubuntu-latest` GitHub-hosted runners have Docker preinstalled, so the new
+  Testcontainers-based tests need no CI changes to run — not verified against
+  actual GitHub Actions in this session, only locally.
 
 **Cleanup (low):**
 - `AddOMyFishTelemetry` shared extension is dead code — never called, every

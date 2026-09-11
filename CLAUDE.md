@@ -134,8 +134,12 @@ ai-service also exposes the Quebec Regs Advisor (`/regs/*` — limits, consumpti
 
 ## Testing
 
-Test projects live in `tests/` (`OMyFish.IdentityService.Tests`, `OMyFish.ObservationService.Tests`, `OMyFish.SpeciesService.Tests`) — run with `make test`.
+Test projects live in `tests/` (`OMyFish.ApiGateway.Tests`, `OMyFish.IdentityService.Tests`, `OMyFish.NotificationService.Tests`, `OMyFish.ObservationService.Tests`, `OMyFish.SpeciesService.Tests`) — run with `make test`.
 
 - Unit: xUnit, NSubstitute (or Moq) — no infrastructure deps
-- Integration: `WebApplicationFactory<Program>` + Testcontainers.PostgreSql
+- Integration: `WebApplicationFactory<Program>` (ApiGateway — needs `public partial class Program;`
+  added since top-level statements generate that class `internal` otherwise) + Testcontainers.PostgreSql
+  on the same `postgis/postgis:16-3.4-alpine` image `docker-compose.yml` uses, migrated with the
+  real `migrations/<Service>/*.sql` files (`PostgresFixture` in SpeciesService/ObservationService
+  tests) — not EF's model, so schema/entity drift fails a test instead of only surfacing live
 - Use `IMediator` mocks for endpoint unit tests

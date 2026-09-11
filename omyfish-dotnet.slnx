@@ -30,6 +30,7 @@
     <Project Path="src/shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/OMyFish.ApiGateway.Tests/OMyFish.ApiGateway.Tests.csproj" />
     <Project Path="tests/OMyFish.IdentityService.Tests/OMyFish.IdentityService.Tests.csproj" />
     <Project Path="tests/OMyFish.NotificationService.Tests/OMyFish.NotificationService.Tests.csproj" />
     <Project Path="tests/OMyFish.ObservationService.Tests/OMyFish.ObservationService.Tests.csproj" />

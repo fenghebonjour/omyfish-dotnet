@@ -97,3 +97,8 @@ internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log
         return true;
     }
 }
+
+// Exposes the top-level-statements Program class to WebApplicationFactory<Program> in
+// OMyFish.ApiGateway.Tests — top-level statements otherwise generate it `internal`, which
+// isn't visible across assemblies.
+public partial class Program;
