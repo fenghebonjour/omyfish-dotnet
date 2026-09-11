@@ -380,11 +380,23 @@ turned out already stale). Only the rest of Testing/CI is still open.
   dictionary for the same case. 8 new tests, all passing; full solution
   suite re-verified at 88 tests total.
 
-  **Still open:** the `RabbitMQPublisher`s have no tests; endpoint-level
-  (not repository-level) slice tests for SpeciesService/ObservationService's
-  own Api projects are also still open (see the WebApplicationFactory
-  follow-up above — needs Testcontainers or MassTransit hosted-service
-  mocking since their endpoints publish through the outbox).
+  **`RabbitMQPublisher`s — DONE 2026-09-11:** added
+  `RabbitMQPublisherTests.cs` to both `OMyFish.SpeciesService.Tests` and
+  `OMyFish.ObservationService.Tests` (NSubstitute-mocked `IPublishEndpoint`,
+  no Docker/broker needed). Each covers the domain-to-integration-event
+  field mapping (`FishIdentifiedEvent`/`ObservationCreatedEvent` → their
+  `OMyFish.Shared.Contracts.Events` counterparts, predictions list included
+  for species) and that an unrecognized `DomainEvent` subtype is a silent
+  no-op — `bus.ReceivedCalls()` stays empty — which is the class's current,
+  deliberate behavior but also exactly the kind of thing a future domain
+  event added without updating the publisher would only surface live. 4 new
+  tests, all passing; full solution suite re-verified at 92 tests total.
+
+  **Still open:** endpoint-level (not repository-level) slice tests for
+  SpeciesService/ObservationService's own Api projects (see the
+  WebApplicationFactory follow-up above — needs Testcontainers or
+  MassTransit hosted-service mocking since their endpoints publish through
+  the outbox).
 - CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
   (no `npm test` script exists at all), no image build, no dependency scan.
   `ubuntu-latest` GitHub-hosted runners have Docker preinstalled, so the new
