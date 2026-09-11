@@ -362,12 +362,29 @@ turned out already stale). Only the rest of Testing/CI is still open.
   (`NotificationDbContextIntegrationTests.cs`, alongside the existing
   InMemory-provider consumer tests, which don't enforce real constraints).
   All 5 test projects pass end-to-end (80 tests total) via `dotnet test
-  omyfish-dotnet.slnx`, Docker available this session. `AIServiceClient` and
-  the `RabbitMQPublisher`s still have no tests; endpoint-level (not
-  repository-level) slice tests for SpeciesService/ObservationService's own
-  Api projects are also still open (see the WebApplicationFactory follow-up
-  above — needs Testcontainers or MassTransit hosted-service mocking since
-  their endpoints publish through the outbox).
+  omyfish-dotnet.slnx`, Docker available this session.
+
+  **`AIServiceClient` — DONE 2026-09-11:** added
+  `AIServiceClientTests.cs` to `OMyFish.SpeciesService.Tests`, a
+  `FakeHttpMessageHandler`-backed unit test (no Docker/real ai-service
+  needed) covering: `PredictAsync`'s JSON-to-`AIPrediction` mapping with
+  sequential rank assignment, its two defensive fallbacks (non-success
+  status code and a null `predictions` field both return an empty result
+  instead of throwing); `GetBiteForecastAsync`'s species-key resolution
+  (including the "general" fallback when the lookup returns null) and that
+  the six-factor `Breakdown`/`WeightedContribution` dictionaries survive the
+  JSON round-trip untouched, per the product invariant documented on
+  `BiteForecastDto`; and that `GetBiteForecastAsync`/`AskRegsAsync` throw
+  `HttpRequestException` (rather than returning null) on an empty ai-service
+  response body, while `GetRegsZonesGeoJsonAsync` falls back to an empty
+  dictionary for the same case. 8 new tests, all passing; full solution
+  suite re-verified at 88 tests total.
+
+  **Still open:** the `RabbitMQPublisher`s have no tests; endpoint-level
+  (not repository-level) slice tests for SpeciesService/ObservationService's
+  own Api projects are also still open (see the WebApplicationFactory
+  follow-up above — needs Testcontainers or MassTransit hosted-service
+  mocking since their endpoints publish through the outbox).
 - CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
   (no `npm test` script exists at all), no image build, no dependency scan.
   `ubuntu-latest` GitHub-hosted runners have Docker preinstalled, so the new
