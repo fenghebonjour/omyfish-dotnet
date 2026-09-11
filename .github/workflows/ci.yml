@@ -19,3 +19,78 @@ jobs:
 
       - name: Test
         run: dotnet test omyfish-dotnet.slnx --logger "console;verbosity=minimal"
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Informational for now, not a merge gate: the repo has pre-existing
+      # whitespace-only formatting drift (BACKLOG.md item F, Testing/CI tier)
+      # that needs its own cleanup pass before this can fail the build.
+      - name: Check formatting
+        run: dotnet format omyfish-dotnet.slnx --verify-no-changes --verbosity diagnostic || true
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/omyfish-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/omyfish-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds every app-service image docker-compose.yml defines (ai-service is
+      # excluded — it's gated behind the `bundled` profile and its build context
+      # lives in the separate omyfish-ai repo). Compose skips services with no
+      # `build:` section (postgres, rabbitmq, etc.) automatically.
+      - name: Build service images
+        run: docker compose build
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Informational for now, not a merge gate: the repo has known pre-existing
+      # vulnerable transitive packages on both sides (OpenTelemetry 1.9.0 on
+      # .NET; postcss/sharp via Next.js on the frontend) that need a dedicated
+      # upgrade pass before this can fail the build (BACKLOG.md item F).
+      - name: .NET vulnerable package scan
+        run: |
+          dotnet restore omyfish-dotnet.slnx
+          dotnet list omyfish-dotnet.slnx package --vulnerable --include-transitive || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/omyfish-web/package-lock.json
+
+      - name: npm audit
+        working-directory: frontend/omyfish-web
+        run: npm audit --audit-level=high || true

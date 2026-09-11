@@ -397,11 +397,33 @@ turned out already stale). Only the rest of Testing/CI is still open.
   WebApplicationFactory follow-up above — needs Testcontainers or
   MassTransit hosted-service mocking since their endpoints publish through
   the outbox).
-- CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
-  (no `npm test` script exists at all), no image build, no dependency scan.
-  `ubuntu-latest` GitHub-hosted runners have Docker preinstalled, so the new
-  Testcontainers-based tests need no CI changes to run — not verified against
-  actual GitHub Actions in this session, only locally.
+- ~~CI only runs `dotnet test` — no `dotnet format`, no frontend build/lint
+  (no `npm test` script exists at all), no image build, no dependency scan~~
+  — fixed 2026-09-11: `.github/workflows/ci.yml` gained 4 more jobs
+  alongside the existing `test` job. `format` runs `dotnet format
+  --verify-no-changes`; `frontend` runs `npm ci && npm run build` (Next.js's
+  own build step includes type-checking and linting — `next lint` itself
+  can't run non-interactively since no ESLint config exists yet, and adding
+  one is a separate, opinionated decision out of scope here); `docker-build`
+  runs `docker compose build` (covers every app-service image — `ai-service`
+  is excluded, it's gated behind the `bundled` profile and its build context
+  lives in the separate `omyfish-ai` repo, not available to this repo's CI
+  checkout); `dependency-scan` runs `dotnet list package --vulnerable
+  --include-transitive` plus `npm audit --audit-level=high` in the
+  frontend. All 5 verified locally: `test`/`frontend`/`docker-build` pass
+  cleanly as-is (6 images built in ~6.5 min with partial caching); `format`
+  and `dependency-scan` are deliberately **non-blocking** (`|| true`) for
+  now — the repo has real pre-existing findings (whitespace-only formatting
+  drift in `BillingService.cs`/`ICommandHandler.cs`/`IQueryHandler.cs`/the
+  two `Shared.Contracts` event records; the already-known moderate
+  OpenTelemetry 1.9.0 NU1902s on .NET; high/critical `postcss`/`sharp`
+  transitive CVEs via Next.js on the frontend) that each need their own
+  dedicated cleanup/upgrade pass before either check can fail the build
+  without immediately going red for unrelated reasons. Not verified against
+  real GitHub Actions in this session (`ubuntu-latest` runners have Docker
+  preinstalled per prior sessions' notes, so `docker-build` needs no
+  additional setup steps there) — only run locally via the equivalent
+  commands and a real `docker compose build`.
 
 **Cleanup (low) — DONE 2026-09-11:**
 - ~~`AddOMyFishTelemetry` shared extension is dead code~~ — turned out to be
