@@ -98,6 +98,16 @@ Both use MediatR. Register handlers with `services.AddMediatR(...)`.
   application-level dead-lettering, not a custom `.dlq` suffix or RabbitMQ's native DLX)
 - Retry policy: 3 attempts, exponential backoff — `r.Exponential(3, min: 5s, max: 5min, delta: 30s)`,
   configured on NotificationService's two receive endpoints only (not on the publish side)
+- **Publish side (SpeciesService/ObservationService) uses MassTransit's EF Core transactional
+  outbox** (`AddEntityFrameworkOutbox<TDbContext>(o => { o.UsePostgres(); o.UseBusOutbox(); })`)
+  — this replaced a dual-write (DB save, then a separate publish call) where a crash between
+  the two silently dropped the event (BACKLOG.md item F §2.3). Each repository's `AddAsync`
+  only stages the entity; `IUnitOfWork.SaveChangesAsync(ct)` (one per service) is what the
+  command handler calls last, after publishing via `IPublishEndpoint` — both the domain write
+  and the outbox row commit in one transaction. Outbox tables (`InboxState`/`OutboxMessage`/
+  `OutboxState`) are suffixed `_species`/`_observation` in `migrations/<Service>/002 and
+  004_add_outbox.sql` since both services share one physical Postgres database (same reason
+  DbUp's journal table is `schemaversions_<service>`, not shared).
 
 ## AI Service
 

@@ -27,10 +27,18 @@ public class SpeciesRepository : ISpeciesRepository
     public async Task<IReadOnlyList<Species>> GetAllAsync(CancellationToken ct = default)
         => await _db.Species.AsNoTracking().ToListAsync(ct);
 
-    public async Task AddAsync(Species species, CancellationToken ct = default)
+    // Stages the insert only — the caller commits via IUnitOfWork so this can share a
+    // transaction with an outbox message write (BACKLOG.md item F §2.3).
+    public Task AddAsync(Species species, CancellationToken ct = default)
     {
         _db.Species.Add(species);
-        await _db.SaveChangesAsync(ct);
+        return Task.CompletedTask;
+    }
+
+    public Task AddPredictionAsync(Prediction prediction, CancellationToken ct = default)
+    {
+        _db.Predictions.Add(prediction);
+        return Task.CompletedTask;
     }
 
     public async Task AddIfNotExistsAsync(Species species, CancellationToken ct = default)

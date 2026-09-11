@@ -12,17 +12,20 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
     private readonly IStorageService _storage;
     private readonly ISpeciesRepository _speciesRepository;
     private readonly IMessagePublisher _publisher;
+    private readonly IUnitOfWork _unitOfWork;
 
     public IdentifyFishCommandHandler(
         IAIServiceClient aiClient,
         IStorageService storage,
         ISpeciesRepository speciesRepository,
-        IMessagePublisher publisher)
+        IMessagePublisher publisher,
+        IUnitOfWork unitOfWork)
     {
         _aiClient = aiClient;
         _storage = storage;
         _speciesRepository = speciesRepository;
         _publisher = publisher;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<IdentifyFishResult> Handle(IdentifyFishCommand command, CancellationToken ct)
@@ -35,6 +38,8 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
 
         var predictions = new List<PredictionDto>();
         Species? topSpecies = null;
+        Prediction? topPrediction = null;
+        bool topSpeciesIsNew = false;
 
         // Batched lookup instead of one query per prediction (BACKLOG.md item F, WEAKNESS_AUDIT.md §3.4).
         var scientificNames = aiResult.Predictions.Select(p => p.ScientificName).ToList();
@@ -45,9 +50,9 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
 
         foreach (var ai in aiResult.Predictions)
         {
-            var species = knownSpecies.GetValueOrDefault(ai.ScientificName)
-                ?? Species.Create(ai.ScientificName, ai.CommonName, "Unknown",
-                                  "Unknown", "Unknown", "Unknown", "", false);
+            var isNew = !knownSpecies.TryGetValue(ai.ScientificName, out var species);
+            species ??= Species.Create(ai.ScientificName, ai.CommonName, "Unknown",
+                                        "Unknown", "Unknown", "Unknown", "", false);
 
             var score = ConfidenceScore.Create(ai.Confidence);
             var prediction = species.IdentifyFrom(storageKey, score, ai.Rank);
@@ -62,14 +67,28 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
                 ai.Description ?? species.Description,
                 ai.FunFact));
 
-            if (ai.Rank == 1) topSpecies = species;
+            if (ai.Rank == 1)
+            {
+                topSpecies = species;
+                topPrediction = prediction;
+                topSpeciesIsNew = isNew;
+            }
         }
 
         if (topSpecies is not null)
         {
-            var domainEvents = topSpecies.PullDomainEvents();
-            foreach (var evt in domainEvents)
+            // Persists the top prediction (and its species, if the AI service surfaced one
+            // outside the catalog) in the same transaction as the event publish below via
+            // MassTransit's EF Core outbox, so a crash between "save" and "publish" can no
+            // longer drop the event (BACKLOG.md item F §2.3).
+            if (topSpeciesIsNew)
+                await _speciesRepository.AddAsync(topSpecies, ct);
+            await _speciesRepository.AddPredictionAsync(topPrediction!, ct);
+
+            foreach (var evt in topSpecies.PullDomainEvents())
                 await _publisher.PublishAsync(evt, ct);
+
+            await _unitOfWork.SaveChangesAsync(ct);
         }
 
         bool uncertain = predictions.Count == 0 || predictions[0].Confidence < 0.30;

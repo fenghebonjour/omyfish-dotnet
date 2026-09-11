@@ -14,6 +14,7 @@ public class IdentifyFishCommandHandlerTests
     private readonly IStorageService _storage = Substitute.For<IStorageService>();
     private readonly ISpeciesRepository _repo = Substitute.For<ISpeciesRepository>();
     private readonly IMessagePublisher _publisher = Substitute.For<IMessagePublisher>();
+    private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly IdentifyFishCommandHandler _handler;
 
     private static readonly byte[] ImageBytes = "test-image-bytes"u8.ToArray();
@@ -24,7 +25,7 @@ public class IdentifyFishCommandHandlerTests
     {
         _storage.UploadAsync(Arg.Any<Stream>(), "fish.jpg", "image/jpeg", Arg.Any<CancellationToken>())
             .Returns("identify/some-guid/fish.jpg");
-        _handler = new IdentifyFishCommandHandler(_ai, _storage, _repo, _publisher);
+        _handler = new IdentifyFishCommandHandler(_ai, _storage, _repo, _publisher, _unitOfWork);
     }
 
     private void AiReturns(params AIPrediction[] predictions) =>
@@ -49,6 +50,10 @@ public class IdentifyFishCommandHandlerTests
         Assert.Equal(1, top.Rank);
         Assert.False(result.Uncertain);
         Assert.True(result.IsFish);
+        // Already in the catalog — only the prediction row is new (BACKLOG.md item F §2.3).
+        await _repo.DidNotReceive().AddAsync(Arg.Any<Species>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).AddPredictionAsync(Arg.Any<Prediction>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -61,6 +66,12 @@ public class IdentifyFishCommandHandlerTests
         var top = Assert.Single(result.Predictions);
         Assert.Equal("Muskellunge", top.SpeciesName);
         Assert.Equal("Esox masquinongy", top.ScientificName);
+        // New-to-the-catalog species: both the species and its prediction get persisted,
+        // committed together with the event publish via the outbox (BACKLOG.md item F §2.3).
+        await _repo.Received(1).AddAsync(
+            Arg.Is<Species>(s => s.ScientificName == "Esox masquinongy"), Arg.Any<CancellationToken>());
+        await _repo.Received(1).AddPredictionAsync(Arg.Any<Prediction>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -88,6 +99,7 @@ public class IdentifyFishCommandHandlerTests
         Assert.False(result.IsFish);
         await _publisher.DidNotReceive()
             .PublishAsync(Arg.Any<DomainEvent>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -116,6 +128,7 @@ public class IdentifyFishCommandHandlerTests
             .FindByScientificNamesAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
         await _publisher.DidNotReceive()
             .PublishAsync(Arg.Any<DomainEvent>(), Arg.Any<CancellationToken>());
+        await _unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

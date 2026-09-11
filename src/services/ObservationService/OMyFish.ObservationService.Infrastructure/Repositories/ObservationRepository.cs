@@ -45,10 +45,12 @@ public class ObservationRepository : IObservationRepository
                 latitude, longitude, radiusKm)
             .ToListAsync(ct);
 
-    public async Task AddAsync(Observation observation, CancellationToken ct = default)
+    // Stages the insert only — the caller commits via IUnitOfWork so this can share a
+    // transaction with an outbox message write (BACKLOG.md item F §2.3).
+    public Task AddAsync(Observation observation, CancellationToken ct = default)
     {
         _db.Observations.Add(observation);
-        await _db.SaveChangesAsync(ct);
+        return Task.CompletedTask;
     }
 
     public async Task<bool> DeleteAsync(Guid id, Guid userId, CancellationToken ct = default)

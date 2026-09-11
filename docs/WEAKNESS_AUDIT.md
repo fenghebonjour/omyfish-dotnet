@@ -131,10 +131,10 @@ securityContext:
 
 ## 2. Resilience
 
-**Status:** §2.1, §2.2, §2.4 fixed 2026-09-10 (see `BACKLOG.md` item F for
-what shipped). §2.3 (the outbox pattern) is deliberately still open — it
-needs a live Postgres/RabbitMQ to verify a write-path change against, which
-wasn't available where this was written.
+**Status:** all four items fixed and verified — §2.1, §2.2, §2.4 on
+2026-09-10, §2.3 (the outbox pattern) on 2026-09-11 via a live `make
+build-up` run (see `BACKLOG.md` item F for what shipped, including a second
+bug the live check surfaced and fixed).
 
 ### 2.1 No timeout / retry / circuit breaker on the AI service client
 
@@ -216,6 +216,12 @@ app.UseExceptionHandler();
 
 ### 2.3 Dual-write without an outbox — events can be silently lost
 
+**Status: fixed and verified 2026-09-11** against a live `make build-up` —
+real identify and observation-create calls, confirmed events delivered and
+a notification landed (see `BACKLOG.md` item F for the full note, including
+a second pre-existing bug the live check surfaced: `predictions.scientific_name`
+was `NOT NULL` in the schema but never mapped by EF).
+
 **Problem:** command handlers save to Postgres, then separately publish an
 integration event afterward
 (`CreateObservationCommandHandler.cs:42-45`,
@@ -230,7 +236,36 @@ to explain it.
 
 **Fix — MassTransit's built-in EF Core outbox** (writes the event to the
 same DB transaction as the domain write; a separate delivery service drains
-it to RabbitMQ):
+it to RabbitMQ). Implemented largely as sketched below, with two
+adjustments made once the actual handlers were in front of us:
+
+1. The repository layer keeps its `AddAsync` seam (`IObservationRepository`/
+   `ISpeciesRepository`) instead of the handler touching `DbContext`
+   directly — `AddAsync` now only stages the entity (no more inline
+   `SaveChangesAsync`), and a new `IUnitOfWork.SaveChangesAsync(ct)` (one per
+   service, backed by the same scoped `DbContext`) is what the handler calls
+   last, after publishing. That's the "`IUnitOfWork` seam through the
+   repository layer" `BACKLOG.md` called for.
+2. `IdentifyFishCommandHandler` turned out to have no DB write at all to
+   protect — new-to-the-catalog species from the AI service were never
+   persisted (`ISpeciesRepository.AddAsync`/`Predictions` DbSet existed but
+   nothing called them; a pre-existing gap, not something this session's
+   earlier N+1 fix introduced — checked via `git show d06c4db`). Fixed as
+   part of this: the top prediction (and its species, if new) is now staged
+   before publishing, so the outbox has something real to make atomic with
+   the event, and `predictions` (previously dead) actually gets populated.
+
+Outbox tables (`InboxState`/`OutboxMessage`/`OutboxState`, MassTransit's own
+schema) are suffixed `_species`/`_observation` per service — like
+`schemaversions_<service>` for DbUp's journal (§3.1) — because species,
+observation, and notification all share one physical Postgres database.
+Raw SQL for these tables was generated once via `dotnet ef migrations
+script` against `MassTransit.EntityFrameworkCore` 8.3.7 (matching this
+repo's already-pinned `MassTransit.RabbitMQ` version) rather than
+hand-derived, then adapted to this repo's `IF NOT EXISTS` migration
+convention — see `migrations/SpeciesService/002_add_outbox.sql` and
+`migrations/ObservationService/004_add_outbox.sql`.
+
 ```csharp
 // Program.cs
 builder.Services.AddMassTransit(x =>
@@ -245,9 +280,10 @@ builder.Services.AddMassTransit(x =>
 ```
 ```csharp
 // CreateObservationCommandHandler — now atomic with the outbox enabled
-await _dbContext.Observations.AddAsync(observation, ct);
-await _publisher.PublishAsync(new ObservationCreatedEvent(...), ct); // buffered in same tx
-await _dbContext.SaveChangesAsync(ct); // commits DB write + outbox row together
+await _repo.AddAsync(observation, ct);
+foreach (var evt in observation.PullDomainEvents())
+    await _publisher.PublishAsync(evt, ct); // buffered in same tx via IPublishEndpoint
+await _unitOfWork.SaveChangesAsync(ct); // commits DB write + outbox row together
 ```
 
 ### 2.4 No idempotency in consumers — redelivery creates duplicates

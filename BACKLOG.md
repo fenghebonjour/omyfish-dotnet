@@ -146,10 +146,9 @@ needs, so it doesn't belong on Postgres. Port the same move here:
 codebase audit; full explanation + fix snippets in `docs/WEAKNESS_AUDIT.md`.
 Grouped by priority. Landed 2026-09-10: quick/low-risk tier (commit d06c4db),
 security tier (commit cfb942e), most of the resilience tier (idempotency +
-quorum queues, commit 01ac2b6), and §3.1/§3.2/§3.4 of the data layer tier
-(this commit — **§3.1's DbUp switch needs `make build-up` verification, see
-its note below**) — the outbox pattern (§2.3) is deliberately still open, see
-its note below. §3.3 (PostGIS backfill), testing/CI, and cleanup are still open.
+quorum queues, commit 01ac2b6), and §3.1/§3.2/§3.4/§3.3 of the data layer
+tier. Landed and verified 2026-09-11: the outbox pattern (§2.3), via a real
+`make build-up` — see its note below. Testing/CI and cleanup are still open.
 
 **Security (critical) — DONE 2026-09-10:**
 - ~~Gateway configures JWT auth but never calls `.RequireAuthorization()` on
@@ -179,16 +178,53 @@ its note below. §3.3 (PostGIS backfill), testing/CI, and cleanup are still open
   (commit d06c4db): 15s `HttpClient.Timeout`. (§2.1)
 - ~~No global exception handler (`IExceptionHandler`) in any Api project~~ —
   fixed in the quick-win tier (commit d06c4db): added to all 5 Api projects. (§2.2)
-- **TODO — deferred by user decision 2026-09-10:** Dual-write without an
-  outbox: DB save + event publish are separate calls in
-  `CreateObservationCommandHandler`/`IdentifyFishCommandHandler` — a crash
-  between them silently drops the event (rare — only on a crash at that exact
-  moment — but silent when it happens). Fix is a MassTransit EF Core outbox +
-  an `IUnitOfWork` seam through the repository layer (Application/Domain
-  can't reference EF Core directly) across both services, plus new outbox
-  tables in both databases. Do this as its own round, verified by actually
-  triggering an identify/observation-create via `make build-up` and watching
-  the resulting notification arrive — don't land it on a build-only check. (§2.3)
+- ~~Dual-write without an outbox: DB save + event publish are separate calls
+  in `CreateObservationCommandHandler`/`IdentifyFishCommandHandler` — a crash
+  between them silently drops the event~~ — fixed 2026-09-11: MassTransit's
+  EF Core transactional outbox (`AddEntityFrameworkOutbox<TDbContext>(o =>
+  { o.UsePostgres(); o.UseBusOutbox(); })`) on both services. Each
+  repository's `AddAsync` now only stages the entity; a new
+  `IUnitOfWork.SaveChangesAsync(ct)` (one per service) is what the handler
+  calls last, after publishing via `IPublishEndpoint` — that's the
+  "`IUnitOfWork` seam through the repository layer" this item called for.
+  Outbox tables (`InboxState`/`OutboxMessage`/`OutboxState`) are suffixed
+  `_species`/`_observation` since both services share one physical Postgres
+  database — same reason as `schemaversions_<service>` in §3.1. Their raw
+  SQL (`migrations/SpeciesService/002_add_outbox.sql`,
+  `migrations/ObservationService/004_add_outbox.sql`) was generated via
+  `dotnet ef migrations script` against
+  `MassTransit.EntityFrameworkCore` 8.3.7 rather than hand-derived, then
+  adapted to this repo's idempotent-migration convention.
+  **Also found and fixed while wiring this up:** `IdentifyFishCommandHandler`
+  had no DB write at all to protect — species the AI service identified
+  outside the catalog were built in memory but never persisted (confirmed via
+  `git show d06c4db` that this predates that commit's N+1 fix, not caused by
+  it). The top prediction (and its species, if new) is now staged and
+  persisted alongside the event publish, so `predictions`/`species` (both
+  previously dead) are populated and the outbox has a real write to be atomic
+  with.
+
+  **Verified 2026-09-11 end-to-end via `make build-up`** (Docker was
+  available this session): rebuilt all 5 images, confirmed both new
+  migrations (`Migrations.002_add_outbox.sql` species,
+  `Migrations.004_add_outbox.sql` observation) applied cleanly, then drove
+  real traffic through the gateway — `POST /api/v1/species/identify` with an
+  actual fish photo, and `POST /api/v1/observations` — and confirmed both:
+  the outbox tables briefly held the message then drained to 0 once
+  delivered, `FishIdentifiedConsumer` logged the identify event, and a real
+  `notifications` row appeared for the observation-create (`type
+  OBSERVATION_CREATED`, correct `user_id`).
+
+  **Second bug found and fixed during this verification** (a plain photo of
+  a fish surfaced it immediately, not an edge case): `POST /identify` 500'd
+  with `23502: null value in column "scientific_name" of relation
+  "predictions"`. The `predictions` table (from
+  `001_initial_species_schema.sql`) has always had a `scientific_name NOT
+  NULL` column, but the EF `Prediction` entity/mapping never included it —
+  invisible until this session made the very first `Predictions.Add(...)`
+  call this table has ever seen. Fixed by adding `Prediction.ScientificName`
+  (set from `species.ScientificName` in `Prediction.Create`) and mapping it
+  in `SpeciesDbContext`. Re-verified clean after the fix. (§2.3)
 - ~~No idempotency in NotificationService consumers~~ — fixed and verified
   2026-09-10 end-to-end (real observation → real notification, post-`make
   build-up`): `Notification` now has a unique `SourceEventId` (the

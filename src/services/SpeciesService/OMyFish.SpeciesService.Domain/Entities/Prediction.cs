@@ -8,6 +8,7 @@ public sealed class Prediction
 
     public Guid Id { get; private set; }
     public Species Species { get; private set; } = default!;
+    public string ScientificName { get; private set; } = default!;
     public string ImageStorageKey { get; private set; } = default!;
     public ConfidenceScore Confidence { get; private set; } = default!;
     public int Rank { get; private set; }
@@ -19,6 +20,7 @@ public sealed class Prediction
         {
             Id = Guid.NewGuid(),
             Species = species,
+            ScientificName = species.ScientificName,
             ImageStorageKey = imageStorageKey,
             Confidence = confidence,
             Rank = rank,

@@ -11,13 +11,16 @@ internal sealed class CreateObservationCommandHandler
 {
     private readonly IObservationRepository _repo;
     private readonly IMessagePublisher _publisher;
+    private readonly IUnitOfWork _unitOfWork;
 
     public CreateObservationCommandHandler(
         IObservationRepository repo,
-        IMessagePublisher publisher)
+        IMessagePublisher publisher,
+        IUnitOfWork unitOfWork)
     {
         _repo = repo;
         _publisher = publisher;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<CreateObservationResult> Handle(
@@ -43,6 +46,10 @@ internal sealed class CreateObservationCommandHandler
 
         foreach (var evt in obs.PullDomainEvents())
             await _publisher.PublishAsync(evt, ct);
+
+        // Commits the observation row and the outbox message together — a crash between
+        // "save" and "publish" can no longer drop the event (BACKLOG.md item F §2.3).
+        await _unitOfWork.SaveChangesAsync(ct);
 
         return new CreateObservationResult(
             obs.Id, obs.SpeciesName, command.ImageStorageKey, obs.ObservedAt);

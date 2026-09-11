@@ -31,6 +31,7 @@ builder.Services.AddDbContext<ObservationDbContext>(opts =>
 
 // Repositories
 builder.Services.AddScoped<IObservationRepository, ObservationRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // CQRS
 builder.Services.AddMediatR(cfg =>
@@ -57,6 +58,15 @@ builder.Services.AddScoped<IMessagePublisher, RabbitMQPublisher>();
 
 builder.Services.AddMassTransit(x =>
 {
+    // Transactional outbox — the observation save and the event publish now commit in one
+    // DB transaction, so a crash between the two can no longer drop the event
+    // (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.3).
+    x.AddEntityFrameworkOutbox<ObservationDbContext>(o =>
+    {
+        o.UsePostgres();
+        o.UseBusOutbox();
+    });
+
     x.UsingRabbitMq((ctx, cfg) =>
     {
         var host = builder.Configuration["RabbitMQ__Host"]

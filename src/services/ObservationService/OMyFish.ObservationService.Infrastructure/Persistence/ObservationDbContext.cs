@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using OMyFish.ObservationService.Domain.Entities;
 
@@ -30,5 +31,14 @@ public class ObservationDbContext : DbContext
             o.Ignore(x => x.DomainEvents);
             o.Ignore(x => x.ExifMetadata);
         });
+
+        // MassTransit's EF Core transactional outbox — publishing an integration event and
+        // saving the triggering domain write now commit in the same transaction, so a crash
+        // between the two can no longer drop the event (BACKLOG.md item F §2.3). Tables are
+        // suffixed per-service since species/observation/notification all share one physical
+        // Postgres database (same reason schemaversions_<service> is per-service — see CLAUDE.md).
+        modelBuilder.AddInboxStateEntity(e => e.ToTable("inbox_state_observation"));
+        modelBuilder.AddOutboxMessageEntity(e => e.ToTable("outbox_message_observation"));
+        modelBuilder.AddOutboxStateEntity(e => e.ToTable("outbox_state_observation"));
     }
 }

@@ -12,11 +12,12 @@ public class CreateObservationCommandHandlerTests
 {
     private readonly IObservationRepository _repo = Substitute.For<IObservationRepository>();
     private readonly IMessagePublisher _publisher = Substitute.For<IMessagePublisher>();
+    private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly CreateObservationCommandHandler _handler;
 
     public CreateObservationCommandHandlerTests()
     {
-        _handler = new CreateObservationCommandHandler(_repo, _publisher);
+        _handler = new CreateObservationCommandHandler(_repo, _publisher, _unitOfWork);
     }
 
     private static CreateObservationCommand Command(double? lat = null, double? lon = null) =>
@@ -46,6 +47,14 @@ public class CreateObservationCommandHandlerTests
 
         await _publisher.Received(1).PublishAsync(
             Arg.Any<ObservationCreatedEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_CommitsUnitOfWorkOnceSoOutboxSharesTheTransaction()
+    {
+        await _handler.Handle(Command(), CancellationToken.None);
+
+        await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
