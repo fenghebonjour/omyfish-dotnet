@@ -118,6 +118,17 @@ minio:
   persistence:
     size: 50Gi
 
+# Species catalog store (BACKLOG.md item E) — read-mostly, flexible-schema reference data
+# with no relational integrity needs, so it doesn't belong on Postgres. Mirrors
+# docker-compose.yml's mongodb service.
+mongodb:
+  enabled: true
+  auth:
+    rootUser: omyfish
+    rootPassword: changeme-in-prod
+  persistence:
+    size: 10Gi
+
 ingress:
   enabled: true
   className: nginx

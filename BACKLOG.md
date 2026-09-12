@@ -213,6 +213,28 @@ swap as originally written).
   Testcontainers-backed run, which faked only the AI/storage calls and kept
   DB/broker real.
 
+  **Follow-up, same day:** the Helm chart and raw K8s manifests (templated
+  during item F's Cleanup tier, before this item existed) had no MongoDB at
+  all — `species-service`'s Deployment was missing
+  `MongoDB__ConnectionString`/`MongoDB__Database` entirely, in both
+  `infrastructure/kubernetes/services/species-service-deployment.yaml` and
+  the Helm template. Fixed: added a `mongodb` values block to
+  `infrastructure/helm/omyfish/values.yaml` (mirrors the existing
+  `postgresql`/`rabbitmq`/`minio` blocks' shape), a
+  `mongodb-connection-string` key to
+  `infrastructure/kubernetes/configmaps/omyfish-secrets-template.yaml`, and
+  the two missing env vars to both species-service manifests. **Caveat
+  worth flagging, not something this fix resolves**: `postgresql`/
+  `rabbitmq`/`minio`/now `mongodb` in `values.yaml` are all equally
+  vestigial — `Chart.yaml` has no `dependencies:` block, so none of them
+  are wired to an actual subchart (e.g. Bitnami's), and no raw K8s manifest
+  in this repo deploys any of the four either. The Helm chart's only real,
+  working Deployments are the 6 app services; all four datastores are
+  assumed externally provisioned in a real cluster. Adding `mongodb` here
+  keeps it consistent with the other three, not ahead of them — actually
+  wiring any of the four to a real subchart/StatefulSet is a bigger,
+  separate piece of work, not attempted here.
+
 ---
 
 ## [x] F — Weakness audit follow-up (security, resilience, data consistency)

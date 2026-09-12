@@ -206,6 +206,13 @@ spec:
                   key: rabbitmq-password
             - name: AIService__BaseUrl
               value: "http://ai-service:8000"
+            - name: MongoDB__ConnectionString
+              valueFrom:
+                secretKeyRef:
+                  name: omyfish-secrets
+                  key: mongodb-connection-string
+            - name: MongoDB__Database
+              value: "omyfish"
             - name: Jwt__Secret
               valueFrom:
                 secretKeyRef:
