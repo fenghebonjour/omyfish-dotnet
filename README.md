@@ -15,10 +15,11 @@
 | AI Layer     | Python 3.11 · PyTorch · ONNX Runtime · FastAPI           |
 | Messaging    | RabbitMQ 3.13 (Quorum Queues) · MassTransit             |
 | Database     | PostgreSQL 16 + PostGIS 3.4 · NetTopologySuite           |
+| Species Catalog | MongoDB 7 (read-mostly reference data, see `BACKLOG.md` item E) |
 | Object Store | MinIO (dev) · AWS S3 / Azure Blob (prod)                 |
 | Infra        | Docker Compose · Kubernetes · Helm 3                     |
 | Observability| OpenTelemetry · Prometheus · Grafana · Jaeger · Serilog  |
-| CI/CD        | GitLab CI/CD                                             |
+| CI/CD        | GitHub Actions                                           |
 
 ## Quick Start (Development)
 
@@ -87,6 +88,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full diagrams, DDD bounded contexts, 
 | Notification Service | 8084 |
 | AI Service (Python)  | 8000 |
 | PostgreSQL           | 5432 |
+| MongoDB              | 27017|
 | RabbitMQ AMQP        | 5672 |
 | RabbitMQ Management  | 15672|
 | MinIO API            | 9000 |

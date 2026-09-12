@@ -33,7 +33,10 @@
        ▼                              ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                     PostgreSQL 16 + PostGIS 3.4                            │
-│    identity_db           species_db          observation_db                 │
+│    identity_db      predictions (species-svc)      observation_db           │
+└────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│   MongoDB 7 — species catalog (read-mostly reference data, BACKLOG.md E)  │
 └────────────────────────────────────────────────────────────────────────────┘
 ┌────────────────────────────────────────────────────────────────────────────┐
 │            MinIO (dev) / AWS S3 or Azure Blob (prod)                       │
@@ -53,7 +56,7 @@
 |----------------------|-------------------------------------------------------------|------|---------------------------------|
 | **ApiGateway**       | YARP routing, JWT validation, rate limiting, CORS           | 8080 | YARP, ASP.NET Core              |
 | **IdentityService**  | User auth, JWT issuance, OAuth2/OIDC, API keys             | 8081 | ASP.NET Identity, EF Core       |
-| **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, EF Core, MassTransit   |
+| **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, MongoDB.Driver (species), EF Core (predictions), MassTransit |
 | **ObservationService**| Observation CRUD, EXIF extraction, PostGIS, GeoJSON        | 8083 | NetTopologySuite, MinIO SDK     |
 | **NotificationService**| Notifications read/mark-read API, async event consumers  | 8084 | Minimal API, EF Core, MassTransit |
 | **AIService**        | EfficientNet-B3 inference, CLIP fallback, Bite Score forecast — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
@@ -102,8 +105,10 @@ OMyFish.SpeciesService.Application/
 │   Interfaces/ISpeciesRepository.cs        — outbound port
 
 OMyFish.SpeciesService.Infrastructure/
-│   Persistence/SpeciesDbContext.cs         — EF Core
-│   Repositories/SpeciesRepository.cs
+│   Persistence/SpeciesDbContext.cs         — EF Core (Predictions + outbox only; species moved to Mongo, BACKLOG.md E)
+│   Persistence/SpeciesDocument.cs          — Mongo document + domain mapping
+│   Repositories/SpeciesRepository.cs       — MongoDB.Driver-backed (species catalog)
+│   Repositories/PredictionRepository.cs    — EF-backed (shares a transaction with the outbox)
 │   ExternalServices/AIServiceClient.cs     — HttpClient → Python AI
 │   Messaging/RabbitMQPublisher.cs          — MassTransit publish
 
@@ -169,13 +174,30 @@ observation-service (HTTP POST /observations)
 notification-service → "Your observation was saved!"
 ```
 
+## Species Catalog (MongoDB)
+
+Moved off Postgres (BACKLOG.md item E) — read-mostly, flexible-schema
+reference data with no relational integrity needs. One `species` collection,
+document shape mirrors the domain entity 1:1 (see
+`OMyFish.SpeciesService.Infrastructure/Persistence/SpeciesDocument.cs`):
+
+```
+species (_id: Guid-as-string, ScientificName, CommonName, Family,
+          ConservationStatus, Habitat, GeographicRange, Description,
+          IsNorthAmericanFreshwater, ImageUrl, CreatedAt)
+```
+
 ## PostgreSQL + PostGIS Schema
 
-### species_db (see migrations/SpeciesService/)
+### species_db (see migrations/SpeciesService/) — predictions only
+`Prediction` still lives here: every `/identify` call commits it in the
+same transaction as the MassTransit outbox message (BACKLOG.md item F
+§2.3), which MongoDB can't take part in. It denormalizes
+`scientific_name` directly rather than joining back to the species
+catalog — migration `003_drop_species_catalog_table.sql` dropped the old
+`species` table and the `species_id` FK this table used to carry.
 ```sql
-species    (id UUID PK, scientific_name UNIQUE, common_name, family,
-            conservation_status, habitat, geographic_range, is_na_freshwater)
-predictions(id UUID PK, species_id FK, image_storage_key,
+predictions(id UUID PK, scientific_name, image_storage_key,
             confidence DOUBLE, rank INT, user_id UUID, predicted_at)
 ```
 
@@ -307,8 +329,8 @@ Namespace: omyfish
 │    notification-service 1–3  replicas  100m CPU  128Mi     │
 │    ai-service           1–4  replicas  1 CPU     4Gi       │
 │                                                            │
-│  StatefulSets: postgres (PostGIS), rabbitmq (3-node raft)  │
-│  PVCs: postgres 20Gi, minio 50Gi                           │
+│  StatefulSets: postgres (PostGIS), mongodb, rabbitmq (3-node raft) │
+│  PVCs: postgres 20Gi, mongodb 10Gi, minio 50Gi             │
 │  Secrets: JWT key, DB passwords, S3 keys (via Vault/ESO)  │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -336,6 +358,8 @@ Namespace: omyfish
 **MediatR (CQRS)** — Decouples HTTP endpoints from business logic. Each use case is a self-contained handler testable in isolation without a running web server. The pipeline behavior feature provides cross-cutting concerns (validation, logging, caching) as composable middleware per command/query.
 
 **Entity Framework Core + Npgsql + NetTopologySuite** — EF Core with the NetTopologySuite plugin maps PostGIS `geometry` columns to typed .NET objects (`Point`, `Polygon`, etc.), enabling type-safe spatial queries. Npgsql is the highest-performance PostgreSQL driver for .NET.
+
+**MongoDB.Driver (species catalog only)** — The species catalog is read-mostly, flexible-schema reference data with no relational integrity needs (no foreign keys point at it any more, confirmed by dropping `predictions.species_id` in migration 003), so it doesn't belong on a relational store. `Prediction` stays on Postgres precisely because it *does* need relational/transactional guarantees — it commits in the same transaction as the outbox message on every `/identify` call (BACKLOG.md item F §2.3), which MongoDB can't take part in.
 
 **MassTransit + RabbitMQ Quorum Queues** — MassTransit abstracts messaging behind a consistent API, adding saga support, retry policies, dead-letter queue routing, and outbox pattern support out of the box. Quorum queues replace classic mirrored queues with Raft-based consensus for true HA.
 

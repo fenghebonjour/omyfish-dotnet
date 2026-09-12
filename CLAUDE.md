@@ -40,7 +40,7 @@ src/
       OMyFish.SpeciesService.Api/           Minimal API endpoints
       OMyFish.SpeciesService.Application/   Commands, Queries, Interfaces
       OMyFish.SpeciesService.Domain/        Species, Prediction, ConfidenceScore
-      OMyFish.SpeciesService.Infrastructure/ EF Core, AI client, MassTransit
+      OMyFish.SpeciesService.Infrastructure/ MongoDB.Driver (species catalog), EF Core (predictions), AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
     NotificationService/OMyFish.NotificationService/  Web API (notifications read/mark-read) + MassTransit consumers
 frontend/omyfish-web/                       Next.js 15 + TypeScript (pages: / [Timing], /identify, /regs, /observations, /notifications, /login, /register)
@@ -68,6 +68,17 @@ Both use MediatR. Register handlers with `services.AddMediatR(...)`.
 ## Database
 
 - PostgreSQL + PostGIS via Npgsql + NetTopologySuite EF Core plugin
+- **Exception:** species-service's species catalog lives in MongoDB instead
+  (`OMyFish.SpeciesService.Infrastructure/Persistence/SpeciesDocument.cs` +
+  `Repositories/SpeciesRepository.cs`, `MongoDB.Driver`) — read-mostly,
+  flexible-schema reference data with no relational integrity needs
+  (BACKLOG.md item E). `Prediction` stays on Postgres in the same
+  `SpeciesDbContext`/`PredictionRepository.cs` as everything below, because
+  it commits in the same transaction as the MassTransit outbox message on
+  every `/identify` call (item F §2.3) — something MongoDB can't take part
+  in. `Species.Reconstitute(...)` restores a persisted id on read; never use
+  `Species.Create(...)` (which mints a new one) when mapping a Mongo
+  document back to the domain type.
 - Migrations: raw SQL in `migrations/` (no EF Core Migrations — use explicit SQL)
 - **Applied automatically on service startup via DbUp** — each Api project embeds its own
   `migrations/<Service>/*.sql` at build time (`EmbeddedResource` + `LogicalName="Migrations.*"`
@@ -127,6 +138,7 @@ ai-service also exposes the Quebec Regs Advisor (`/regs/*` — limits, consumpti
 - `MassTransit.RabbitMQ` (messaging)
 - `Npgsql.EntityFrameworkCore.PostgreSQL` (EF Core driver)
 - `NetTopologySuite` (spatial types for PostGIS)
+- `MongoDB.Driver` (species-service's species catalog only — see Database above)
 - `Yarp.ReverseProxy` (API Gateway)
 - `OpenTelemetry.Extensions.Hosting` (traces)
 - `prometheus-net.AspNetCore` (metrics)
@@ -137,9 +149,31 @@ ai-service also exposes the Quebec Regs Advisor (`/regs/*` — limits, consumpti
 Test projects live in `tests/` (`OMyFish.ApiGateway.Tests`, `OMyFish.IdentityService.Tests`, `OMyFish.NotificationService.Tests`, `OMyFish.ObservationService.Tests`, `OMyFish.SpeciesService.Tests`) — run with `make test`.
 
 - Unit: xUnit, NSubstitute (or Moq) — no infrastructure deps
-- Integration: `WebApplicationFactory<Program>` (ApiGateway — needs `public partial class Program;`
-  added since top-level statements generate that class `internal` otherwise) + Testcontainers.PostgreSql
-  on the same `postgis/postgis:16-3.4-alpine` image `docker-compose.yml` uses, migrated with the
-  real `migrations/<Service>/*.sql` files (`PostgresFixture` in SpeciesService/ObservationService
-  tests) — not EF's model, so schema/entity drift fails a test instead of only surfacing live
+- Repository-level integration: `Testcontainers.PostgreSql` on the same
+  `postgis/postgis:16-3.4-alpine` image `docker-compose.yml` uses, migrated
+  with the real `migrations/<Service>/*.sql` files (`PostgresFixture`, in
+  every service's test project except ApiGateway) — not EF's model, so
+  schema/entity drift fails a test instead of only surfacing live.
+  SpeciesService additionally has `SpeciesMongoRepositoryTests.cs`
+  (`Testcontainers.MongoDb`) for the Mongo-backed species catalog
+  (BACKLOG.md item E) — covers the id-restoration path explicitly
+  (`Species.Reconstitute` vs. `Create`).
+- Endpoint-level integration: `WebApplicationFactory<Program>` against the
+  real ASP.NET Core pipeline — every Api project needs `public partial
+  class Program;` added (top-level statements generate that class
+  `internal` otherwise, invisible cross-assembly). ApiGateway's
+  `GatewayAuthorizationTests.cs` has no infra deps. SpeciesService/
+  ObservationService's `SpeciesApiFixture`/`ObservationApiFixture` add
+  `Testcontainers.RabbitMq` (explicit `guest`/`guest` credentials —
+  `RabbitMqBuilder` generates random ones by default) alongside Postgres, so
+  `/identify`/`POST /observations`'s MassTransit EF Core outbox (§2.3) can
+  be proven to actually drain to a real broker, not just write a DB row;
+  SpeciesApiFixture further adds `Testcontainers.MongoDb` and fakes only
+  `IAIServiceClient`/`IStorageService` (the two genuinely-external
+  dependencies `/identify` has) via `ConfigureTestServices`. Read
+  `builder.Configuration` lazily (inside a DI factory delegate, or inside a
+  deferred callback like `UsingRabbitMq`'s) rather than into a top-level
+  variable in `Program.cs` — an eager read runs before
+  `WebApplicationFactory`'s test config overrides are merged in and will
+  silently pick up the production default instead.
 - Use `IMediator` mocks for endpoint unit tests
