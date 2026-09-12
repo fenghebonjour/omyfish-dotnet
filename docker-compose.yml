@@ -12,6 +12,7 @@ volumes:
   postgres_data:
   rabbitmq_data:
   minio_data:
+  mongo_data:
   prometheus_data:
   grafana_data:
 
@@ -63,6 +64,24 @@ services:
     volumes:
       - minio_data:/data
     networks: [omyfish-net]
+
+  # Species catalog store (BACKLOG.md item E) — read-mostly, flexible-schema reference data
+  # with no relational integrity needs, so it doesn't belong on Postgres. Mirrors
+  # omyfish-java's mongodb service.
+  mongodb:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: omyfish
+      MONGO_INITDB_ROOT_PASSWORD: omyfish_dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks: [omyfish-net]
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      retries: 5
 
   prometheus:
     image: prom/prometheus:v2.52.0
@@ -156,6 +175,8 @@ services:
       MinIO__Endpoint: "minio:9000"
       MinIO__AccessKey: omyfish
       MinIO__SecretKey: omyfish_dev
+      MongoDB__ConnectionString: "mongodb://omyfish:omyfish_dev@mongodb:27017/omyfish?authSource=admin"
+      MongoDB__Database: omyfish
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       Seeding__MetadataPath: "/metadata/fish_info.json"
     volumes:
@@ -163,6 +184,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      mongodb: { condition: service_healthy }
     networks: [omyfish-net, omyfish-shared]
 
   observation-service:

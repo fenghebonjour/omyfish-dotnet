@@ -12,5 +12,4 @@ public interface ISpeciesRepository
     Task<IReadOnlyList<Species>> GetAllAsync(CancellationToken ct = default);
     Task AddAsync(Species species, CancellationToken ct = default);
     Task AddIfNotExistsAsync(Species species, CancellationToken ct = default);
-    Task AddPredictionAsync(Prediction prediction, CancellationToken ct = default);
 }

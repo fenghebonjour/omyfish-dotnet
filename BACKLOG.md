@@ -117,32 +117,101 @@ WebApplicationFactory slice-test follow-up noted above).
 
 ---
 
-## [ ] E — Migrate species catalog persistence to MongoDB
+## [x] E — Migrate species catalog persistence to MongoDB
 
-**Status:** NOT STARTED (added 2026-08-19). `omyfish-java` did this first
-(commit 36c0200, see its `BACKLOG.md` item E) — species catalog is
-read-mostly, flexible-schema reference data with no relational integrity
-needs, so it doesn't belong on Postgres. Port the same move here:
+**Status:** DONE (added 2026-08-19, completed 2026-09-11). `omyfish-java` did
+this first (commit 36c0200) — species catalog is read-mostly,
+flexible-schema reference data with no relational integrity needs, so it
+doesn't belong on Postgres.
 
-- Replace `SpeciesDbContext` (EF Core + Npgsql,
-  `OMyFish.SpeciesService.Infrastructure/SpeciesDbContext.cs`) and
-  `SpeciesRepository.cs`'s EF-backed implementation of `ISpeciesRepository`
-  with a MongoDB.Driver-backed one — keep the same `ISpeciesRepository`
-  interface (`OMyFish.SpeciesService.Application/Interfaces/`) so
-  application/domain layers don't change.
-- `Species` entity (`OMyFish.SpeciesService.Domain/Entities/Species.cs`) has a
-  private `Species(Guid id)` constructor already — check whether the
-  EF-to-domain mapping today restores the persisted id correctly before
-  assuming it's fine; Java's equivalent bug (`toDomain()` minting a fresh
-  random id instead of restoring the persisted one) is worth explicitly
-  ruling out here, not assumed away.
-- Drop the species-service EF Core migration(s) for Postgres; add a `mongodb`
-  service to `docker-compose.yml` (mirror Java's: `mongo:7` image, root
-  user/pass env vars, healthcheck via `mongosh --eval`).
-- Remove `Npgsql`/EF-Postgres package refs from
-  `OMyFish.SpeciesService.Infrastructure.csproj`, add `MongoDB.Driver`.
-- Verify with this repo's test suite plus an end-to-end `docker compose up
-  --build` check, same as Java's verification pass.
+**Scope deviation from the bullets below, confirmed with the user before
+implementing:** this item was written before item F §2.3 added a
+`Prediction` entity that's persisted to Postgres *in the same transaction*
+as the MassTransit outbox message on every `/identify` call. A full
+replacement (drop Npgsql, move everything to Mongo) would have broken that
+atomicity guarantee — Mongo can't participate in a Postgres transaction.
+Checked how `omyfish-java` actually handled this: it never persists
+`Prediction` at all (transient, used only to build the event payload,
+published with no outbox/atomicity guarantee) — so Java's port never hit
+this conflict because it doesn't have the thing that conflicts. Went with a
+split instead: **only the species catalog moved to MongoDB; `Prediction`
+stays on Postgres with the existing outbox**, which is both the faithful
+scope of what Java actually ported and the only option that doesn't regress
+§2.3. Both `Npgsql.EntityFrameworkCore.PostgreSQL` and `MongoDB.Driver` stay
+in `OMyFish.SpeciesService.Infrastructure.csproj` as a result (not a full
+swap as originally written).
+
+**What changed:**
+- `Species.Reconstitute(...)` added to the domain entity (mirrors
+  `omyfish-java`'s `Species.reconstitute()`) — restores a persisted id,
+  distinct from `Create` which mints a new one. `Prediction` dropped its EF
+  navigation to `Species` (species no longer lives in the same store) but
+  keeps the `ScientificName` string it already denormalized.
+- `ISpeciesRepository` lost `AddPredictionAsync`; a new `IPredictionRepository`
+  (Postgres/EF-backed, `PredictionRepository.cs`) took over that single
+  method so `IUnitOfWork` keeps committing only Predictions + the outbox row.
+  `IdentifyFishCommandHandler` now writes a new species to Mongo immediately
+  (no ambient transaction to stage into) *before* the Postgres
+  prediction+publish transaction — if the Mongo write succeeds but Postgres
+  then fails, the result is an orphaned catalog entry with no prediction, an
+  acceptable inconsistency for reference data with no relational integrity
+  needs (the same reasoning this migration itself is built on), unlike
+  dropping the event itself.
+- New Mongo-backed `SpeciesRepository.cs` + `SpeciesDocument.cs` (explicit
+  document + `FromDomain()`/`ToDomain()` mapping, not a direct-domain
+  `BsonClassMap`) — kept deliberately simple and auditable so the
+  id-restoration path (`ToDomain()` calls `Species.Reconstitute`, never
+  `Create`) is easy to verify by reading it, mirroring `omyfish-java`'s
+  `SpeciesDocument`/`toDomain()`/`from()` pattern exactly. `Guid` stored via
+  `[BsonRepresentation(BsonType.String)]` to sidestep the MongoDB C# driver's
+  legacy/standard GUID-subtype pitfall entirely.
+- New migration `003_drop_species_catalog_table.sql`: drops the
+  `species_id` FK/column from `predictions` (now dead — `Prediction` never
+  had a navigation needing it) and drops the `species` table. Verified this
+  applies cleanly via DbUp on top of the real, already-migrated dev Postgres
+  (not just a fresh DB).
+- `docker-compose.yml`: added a `mongodb` service mirroring `omyfish-java`'s
+  (`mongo:7`, root user/pass, `mongosh --eval` healthcheck); species-service
+  now depends on it (`condition: service_healthy`) and gets
+  `MongoDB__ConnectionString`/`MongoDB__Database` env vars.
+- **Bug hit during implementation, not assumed away:** the Mongo connection
+  string/database-name config reads were originally eager top-level
+  `var mongoConnectionString = builder.Configuration[...]` statements in
+  `Program.cs` — these ran *before* `WebApplicationFactory`-style test
+  config overrides get merged in, so the identify endpoint test always
+  connected to the unreachable production default (`mongodb:27017`) and
+  timed out. Fixed by moving both reads inside the `AddSingleton` factory
+  delegates, so they resolve lazily on first DI resolution instead — the
+  same reason RabbitMQ's host/port are read inside `UsingRabbitMq`'s own
+  configuration callback rather than into a variable up front.
+- Test suite: `IdentifyFishCommandHandlerTests.cs` updated for the two-repo
+  split; old `SpeciesRepositoryIntegrationTests.cs` replaced by
+  `PredictionRepositoryIntegrationTests.cs` (Postgres, unchanged §2.3
+  coverage minus the species FK) and `SpeciesMongoRepositoryTests.cs`
+  (`Testcontainers.MongoDb` — round-trip, the case-insensitive lookup, batch
+  lookup, `AddIfNotExistsAsync`, and explicitly the id-restoration property:
+  create → read back → assert the same id, not a freshly-minted one — the
+  exact thing `omyfish-java`'s equivalent bug got wrong). `SpeciesApiFixture`
+  (this session's `IdentificationEndpointTests.cs`) gained a
+  `Testcontainers.MongoDb` container alongside its existing Postgres/RabbitMQ
+  ones; its final assertion now resolves `ISpeciesRepository` from the
+  running app's DI container instead of querying `SpeciesDbContext.Species`
+  directly, since that DbSet no longer exists.
+- Verified via `dotnet test omyfish-dotnet.slnx`: 101 tests pass
+  solution-wide. **Also verified end-to-end via a real `docker compose up
+  --build`** (all containers healthy, including the new `mongodb` service):
+  real species seeding from `fish_info.json` landed 141 documents in Mongo
+  (confirmed via `mongosh`), `GET /api/v1/species(/{name})` returned them
+  through the real HTTP pipeline with the *exact* same id as the Mongo
+  document's `_id` (the id-restoration property, proven live, not just in a
+  test), and direct `psql` inspection confirmed the `species` table and
+  `predictions.species_id` are both gone post-migration while `predictions`
+  itself is intact. Did not exercise a real `/identify` call against a live
+  ai-service in this pass (it's gated behind the separate `bundled` Compose
+  profile / the sibling `omyfish-ai` repo) — that path's outbox/Mongo
+  behavior is already covered by `IdentificationEndpointTests.cs`'s
+  Testcontainers-backed run, which faked only the AI/storage calls and kept
+  DB/broker real.
 
 ---
 

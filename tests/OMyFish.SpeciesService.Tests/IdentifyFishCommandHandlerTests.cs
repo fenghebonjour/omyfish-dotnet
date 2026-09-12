@@ -13,6 +13,7 @@ public class IdentifyFishCommandHandlerTests
     private readonly IAIServiceClient _ai = Substitute.For<IAIServiceClient>();
     private readonly IStorageService _storage = Substitute.For<IStorageService>();
     private readonly ISpeciesRepository _repo = Substitute.For<ISpeciesRepository>();
+    private readonly IPredictionRepository _predictionRepo = Substitute.For<IPredictionRepository>();
     private readonly IMessagePublisher _publisher = Substitute.For<IMessagePublisher>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly IdentifyFishCommandHandler _handler;
@@ -25,7 +26,7 @@ public class IdentifyFishCommandHandlerTests
     {
         _storage.UploadAsync(Arg.Any<Stream>(), "fish.jpg", "image/jpeg", Arg.Any<CancellationToken>())
             .Returns("identify/some-guid/fish.jpg");
-        _handler = new IdentifyFishCommandHandler(_ai, _storage, _repo, _publisher, _unitOfWork);
+        _handler = new IdentifyFishCommandHandler(_ai, _storage, _repo, _predictionRepo, _publisher, _unitOfWork);
     }
 
     private void AiReturns(params AIPrediction[] predictions) =>
@@ -52,7 +53,7 @@ public class IdentifyFishCommandHandlerTests
         Assert.True(result.IsFish);
         // Already in the catalog — only the prediction row is new (BACKLOG.md item F §2.3).
         await _repo.DidNotReceive().AddAsync(Arg.Any<Species>(), Arg.Any<CancellationToken>());
-        await _repo.Received(1).AddPredictionAsync(Arg.Any<Prediction>(), Arg.Any<CancellationToken>());
+        await _predictionRepo.Received(1).AddPredictionAsync(Arg.Any<Prediction>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -66,11 +67,12 @@ public class IdentifyFishCommandHandlerTests
         var top = Assert.Single(result.Predictions);
         Assert.Equal("Muskellunge", top.SpeciesName);
         Assert.Equal("Esox masquinongy", top.ScientificName);
-        // New-to-the-catalog species: both the species and its prediction get persisted,
-        // committed together with the event publish via the outbox (BACKLOG.md item F §2.3).
+        // New-to-the-catalog species: the species is written to Mongo immediately, and its
+        // prediction is committed together with the event publish via the Postgres outbox
+        // (BACKLOG.md item F §2.3, item E).
         await _repo.Received(1).AddAsync(
             Arg.Is<Species>(s => s.ScientificName == "Esox masquinongy"), Arg.Any<CancellationToken>());
-        await _repo.Received(1).AddPredictionAsync(Arg.Any<Prediction>(), Arg.Any<CancellationToken>());
+        await _predictionRepo.Received(1).AddPredictionAsync(Arg.Any<Prediction>(), Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 

@@ -11,6 +11,7 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
     private readonly IAIServiceClient _aiClient;
     private readonly IStorageService _storage;
     private readonly ISpeciesRepository _speciesRepository;
+    private readonly IPredictionRepository _predictionRepository;
     private readonly IMessagePublisher _publisher;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -18,12 +19,14 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
         IAIServiceClient aiClient,
         IStorageService storage,
         ISpeciesRepository speciesRepository,
+        IPredictionRepository predictionRepository,
         IMessagePublisher publisher,
         IUnitOfWork unitOfWork)
     {
         _aiClient = aiClient;
         _storage = storage;
         _speciesRepository = speciesRepository;
+        _predictionRepository = predictionRepository;
         _publisher = publisher;
         _unitOfWork = unitOfWork;
     }
@@ -77,13 +80,19 @@ internal sealed class IdentifyFishCommandHandler : ICommandHandler<IdentifyFishC
 
         if (topSpecies is not null)
         {
-            // Persists the top prediction (and its species, if the AI service surfaced one
-            // outside the catalog) in the same transaction as the event publish below via
-            // MassTransit's EF Core outbox, so a crash between "save" and "publish" can no
-            // longer drop the event (BACKLOG.md item F §2.3).
+            // Species now lives in MongoDB (BACKLOG.md item E) — a species the AI service
+            // surfaced outside the catalog is written there immediately, independent of the
+            // transaction below. If this succeeds but the prediction/publish below then fails,
+            // the result is an orphaned catalog entry with no prediction — an acceptable
+            // inconsistency for read-mostly reference data with no relational integrity needs
+            // (the same reasoning item E itself is built on), unlike dropping the event itself.
             if (topSpeciesIsNew)
                 await _speciesRepository.AddAsync(topSpecies, ct);
-            await _speciesRepository.AddPredictionAsync(topPrediction!, ct);
+
+            // The prediction and the event publish still commit together in one Postgres
+            // transaction via MassTransit's EF Core outbox, so a crash between "save" and
+            // "publish" can't drop the event (BACKLOG.md item F §2.3).
+            await _predictionRepository.AddPredictionAsync(topPrediction!, ct);
 
             foreach (var evt in topSpecies.PullDomainEvents())
                 await _publisher.PublishAsync(evt, ct);

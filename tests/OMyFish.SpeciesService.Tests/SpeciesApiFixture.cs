@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.TestHost;
 using OMyFish.SpeciesService.Application.Interfaces;
 using OMyFish.SpeciesService.Infrastructure.Persistence;
+using Testcontainers.MongoDb;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
@@ -31,6 +32,8 @@ public class SpeciesApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
         .WithPassword("guest")
         .Build();
 
+    private readonly MongoDbContainer _mongo = new MongoDbBuilder("mongo:7").Build();
+
     public FakeAIServiceClient FakeAi { get; } = new();
     public FakeStorageService FakeStorage { get; } = new();
 
@@ -41,7 +44,7 @@ public class SpeciesApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
+        await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync(), _mongo.StartAsync());
 
         // Forces the host to build now (runs DbUp migrations, connects to the real broker) so
         // a wiring failure surfaces at fixture setup instead of inside the first test.
@@ -52,6 +55,7 @@ public class SpeciesApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await _postgres.DisposeAsync();
         await _rabbitMq.DisposeAsync();
+        await _mongo.DisposeAsync();
         await base.DisposeAsync();
     }
 
@@ -65,6 +69,8 @@ public class SpeciesApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
             ["RabbitMQ:Port"] = _rabbitMq.GetMappedPublicPort(5672).ToString(),
             ["RabbitMQ:Username"] = "guest",
             ["RabbitMQ:Password"] = "guest",
+            ["MongoDB:ConnectionString"] = _mongo.GetConnectionString(),
+            ["MongoDB:Database"] = "omyfish",
         }));
         builder.ConfigureTestServices(services =>
         {

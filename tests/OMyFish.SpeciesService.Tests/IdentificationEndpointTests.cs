@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using MassTransit.EntityFrameworkCoreIntegration;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using OMyFish.SpeciesService.Application.Interfaces;
 using Xunit;
 
 namespace OMyFish.SpeciesService.Tests;
@@ -54,9 +56,13 @@ public class IdentificationEndpointTests(SpeciesApiFixture fixture)
         // succeeded.
         await WaitForOutboxToDrainAsync(fixture, TimeSpan.FromSeconds(15));
 
+        using var scope = fixture.Services.CreateScope();
+        var speciesRepo = scope.ServiceProvider.GetRequiredService<ISpeciesRepository>();
+        var species = await speciesRepo.FindByScientificNameAsync(scientificName);
+        Assert.NotNull(species);
+        Assert.Equal("Northern Pike", species!.CommonName);
+
         await using var db = fixture.CreateDbContext();
-        var species = await db.Species.SingleAsync(s => s.ScientificName == scientificName);
-        Assert.Equal("Northern Pike", species.CommonName);
         var prediction = await db.Predictions.SingleAsync(p => p.ScientificName == scientificName);
         Assert.Equal(1, prediction.Rank);
     }

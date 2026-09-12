@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Minio;
+using MongoDB.Driver;
 using OMyFish.SpeciesService.Application.Commands;
 using OMyFish.SpeciesService.Application.Interfaces;
 using OMyFish.SpeciesService.Api.Endpoints;
@@ -30,12 +31,26 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
     .Enrich.FromLogContext()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] species | {Message:lj}{NewLine}{Exception}"));
 
-// Database
+// Database — Predictions only; they still commit in the same Postgres transaction as the
+// outbox message on every /identify call (§2.3), which MongoDB can't take part in.
 builder.Services.AddDbContext<SpeciesDbContext>(opts =>
     opts.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
+// Species catalog — MongoDB (BACKLOG.md item E): read-mostly, flexible-schema reference data
+// with no relational integrity needs. Both reads of builder.Configuration happen inside the
+// factory delegate (not eagerly at top level) so they run after WebApplicationFactory-style
+// test overrides are merged in — the same reason RabbitMQ's host/port are read inside
+// UsingRabbitMq's own configuration callback rather than into a variable up front.
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(
+    builder.Configuration["MongoDB__ConnectionString"]
+        ?? builder.Configuration["MongoDB:ConnectionString"]
+        ?? "mongodb://omyfish:omyfish_dev@mongodb:27017/omyfish?authSource=admin"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(
+    builder.Configuration["MongoDB__Database"] ?? builder.Configuration["MongoDB:Database"] ?? "omyfish"));
+
 // Repositories
 builder.Services.AddScoped<ISpeciesRepository, SpeciesRepository>();
+builder.Services.AddScoped<IPredictionRepository, PredictionRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // CQRS

@@ -5,34 +5,17 @@ using OMyFish.SpeciesService.Domain.ValueObjects;
 
 namespace OMyFish.SpeciesService.Infrastructure.Persistence;
 
+// The species catalog itself lives in MongoDB now (BACKLOG.md item E) — this DbContext only
+// holds Predictions, because those still need to commit in the same Postgres transaction as
+// the MassTransit outbox message on every /identify call (§2.3), which Mongo can't take part in.
 public class SpeciesDbContext : DbContext
 {
     public SpeciesDbContext(DbContextOptions<SpeciesDbContext> options) : base(options) { }
 
-    public DbSet<Species> Species => Set<Species>();
     public DbSet<Prediction> Predictions => Set<Prediction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Species>(s =>
-        {
-            s.ToTable("species");
-            s.HasKey(x => x.Id);
-            s.Property(x => x.Id).HasColumnName("id");
-            s.Property(x => x.ScientificName).HasColumnName("scientific_name").HasMaxLength(255).IsRequired();
-            s.HasIndex(x => x.ScientificName).IsUnique();
-            s.Property(x => x.CommonName).HasColumnName("common_name").HasMaxLength(255).IsRequired();
-            s.Property(x => x.Family).HasColumnName("family").HasMaxLength(255);
-            s.Property(x => x.ConservationStatus).HasColumnName("conservation_status").HasMaxLength(50);
-            s.Property(x => x.Habitat).HasColumnName("habitat");
-            s.Property(x => x.GeographicRange).HasColumnName("geographic_range");
-            s.Property(x => x.Description).HasColumnName("description");
-            s.Property(x => x.IsNorthAmericanFreshwater).HasColumnName("is_north_american_freshwater");
-            s.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(512);
-            s.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
-            s.Ignore(x => x.DomainEvents);
-        });
-
         modelBuilder.Entity<Prediction>(p =>
         {
             p.ToTable("predictions");
@@ -45,10 +28,6 @@ public class SpeciesDbContext : DbContext
             p.Property(x => x.Confidence)
                 .HasColumnName("confidence")
                 .HasConversion(v => v.Value, v => ConfidenceScore.Create(v));
-            p.HasOne(x => x.Species)
-                .WithMany()
-                .HasForeignKey("species_id")
-                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // MassTransit's EF Core transactional outbox — publishing an integration event and
