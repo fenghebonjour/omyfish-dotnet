@@ -23,6 +23,24 @@ cd src/services/SpeciesService/OMyFish.SpeciesService.Api
 dotnet run --launch-profile Development
 ```
 
+**ai-service startup:** `make up`/`make build-up` auto-detect whether `ai-service` is already
+reachable on `:8000` (the shared instance from `../omyfish-ai`'s own compose, on the external
+`omyfish-shared` network):
+
+- Reachable → used as-is, no extra work.
+- Not reachable → falls back to starting this repo's own bundled copy
+  (`docker-compose.yml`'s `ai-service` block, `profiles: [bundled]`), creating the
+  `omyfish-shared` network first since it's declared `external: true`.
+
+Don't run both — starting `../omyfish-ai`'s compose *and* letting `make up` fall back to
+`bundled` conflicts on host port 8000. If you want the shared instance (real model weights,
+consistent with the HF Space), start it first:
+
+```bash
+cd ../omyfish-ai && docker compose up -d   # creates omyfish-shared network + ai-service
+cd omyfish-dotnet && make up               # detects it on :8000, uses it
+```
+
 ## Repository Structure
 
 ```

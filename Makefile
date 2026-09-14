@@ -2,18 +2,39 @@
 
 # ─── Dev environment ──────────────────────────────────────────────────────────
 
+# Uses the external ai-service (../omyfish-ai's own compose) if it's already up on
+# :8000; otherwise falls back to starting this repo's bundled copy (profiles: [bundled]).
 up:
-	docker compose up -d
+	@if curl -sf http://localhost:8000/health >/dev/null 2>&1; then \
+		docker compose up -d; \
+	else \
+		echo "ai-service not reachable on :8000 — starting bundled ai-service instead"; \
+		if [ ! -f ../omyfish-ai/.env ] || ! grep -qE '^VISUALCROSSING_API_KEY=.+' ../omyfish-ai/.env || ! grep -qE '^GROQ_API_KEY=.+' ../omyfish-ai/.env; then \
+			echo "warning: ../omyfish-ai/.env is missing VISUALCROSSING_API_KEY and/or GROQ_API_KEY — bite-score forecast and /regs/ask will 503 in bundled mode"; \
+		fi; \
+		docker network create omyfish-shared >/dev/null 2>&1 || true; \
+		COMPOSE_PROFILES=bundled docker compose up -d; \
+	fi
 
 # Use when code, dependencies, or Dockerfiles changed — rebuilds images first
 build-up:
-	docker compose up -d --build
+	@if curl -sf http://localhost:8000/health >/dev/null 2>&1; then \
+		docker compose up -d --build; \
+	else \
+		echo "ai-service not reachable on :8000 — starting bundled ai-service instead"; \
+		if [ ! -f ../omyfish-ai/.env ] || ! grep -qE '^VISUALCROSSING_API_KEY=.+' ../omyfish-ai/.env || ! grep -qE '^GROQ_API_KEY=.+' ../omyfish-ai/.env; then \
+			echo "warning: ../omyfish-ai/.env is missing VISUALCROSSING_API_KEY and/or GROQ_API_KEY — bite-score forecast and /regs/ask will 503 in bundled mode"; \
+		fi; \
+		docker network create omyfish-shared >/dev/null 2>&1 || true; \
+		COMPOSE_PROFILES=bundled docker compose up -d --build; \
+	fi
 
 down:
-	docker compose down
+	docker compose --profile bundled down
 
 restart:
-	docker compose down && docker compose up -d
+	$(MAKE) down
+	$(MAKE) up
 
 logs:
 	docker compose logs -f $(service)

@@ -114,9 +114,11 @@ services:
     networks: [omyfish-net]
 
   # ─── AI Service (Python — preserved from omyfish) ─────────────────────────
-  # Default: NOT started. The shared instance runs from ../omyfish-ai's own
-  # compose on the omyfish-shared network. For a self-contained demo without
-  # the external instance, run: docker compose --profile bundled up -d
+  # Prefers the shared instance from ../omyfish-ai's own compose, on the
+  # omyfish-shared network. `make up`/`make build-up` auto-detect it via
+  # :8000/health and fall back to starting this bundled copy (profiles:
+  # [bundled]) if it's not reachable. To invoke this profile directly:
+  # docker compose --profile bundled up -d
   # (conflicts with the external instance on host port 8000 — run only one).
 
   ai-service:
@@ -126,6 +128,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - path: ../omyfish-ai/.env
+        required: false
     environment:
       MODEL_PATH: /checkpoints/best.pt
       CLASSES_PATH: /checkpoints/classes.json
