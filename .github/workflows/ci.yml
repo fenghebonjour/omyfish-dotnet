@@ -35,26 +35,6 @@ jobs:
       - name: Check formatting
         run: dotnet format omyfish-dotnet.slnx --verify-no-changes --verbosity diagnostic || true
 
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend/omyfish-web
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/omyfish-web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
   docker-build:
     runs-on: ubuntu-latest
     steps:
@@ -77,20 +57,11 @@ jobs:
           dotnet-version: "10.0.x"
 
       # Informational for now, not a merge gate: the repo has known pre-existing
-      # vulnerable transitive packages on both sides (OpenTelemetry 1.9.0 on
-      # .NET; postcss/sharp via Next.js on the frontend) that need a dedicated
-      # upgrade pass before this can fail the build (BACKLOG.md item F).
+      # vulnerable transitive packages (OpenTelemetry 1.9.0) that need a
+      # dedicated upgrade pass before this can fail the build (BACKLOG.md item F).
+      # Frontend dependency scanning now belongs to omyfish-frontend's own CI —
+      # the frontend isn't vendored here anymore.
       - name: .NET vulnerable package scan
         run: |
           dotnet restore omyfish-dotnet.slnx
           dotnet list omyfish-dotnet.slnx package --vulnerable --include-transitive || true
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/omyfish-web/package-lock.json
-
-      - name: npm audit
-        working-directory: frontend/omyfish-web
-        run: npm audit --audit-level=high || true
