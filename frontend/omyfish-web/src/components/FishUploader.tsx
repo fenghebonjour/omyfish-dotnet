@@ -136,27 +136,14 @@ export function FishUploader() {
       const top = result.predictions[0];
       // The image is already stored — identify uploaded it and returned
       // imageKey — so we just reference it here instead of re-uploading.
-      const body = {
+      await api.observations.create({
         speciesName: top.speciesName,
         scientificName: top.scientificName ?? "",
         topConfidence: top.confidence,
         imageStorageKey: result.imageKey,
         latitude: lat ? Number(lat) : null,
         longitude: lng ? Number(lng) : null,
-      };
-
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/observations`,
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      }, token);
       setSaved(true);
     } catch (err) {
       alert("Save failed: " + (err instanceof Error ? err.message : err));

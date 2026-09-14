@@ -166,12 +166,52 @@ export interface AdminSubscriptionRow {
   currentPeriodEnd: string | null;
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
+// AuthContext registers these so an expired access token can be silently
+// refreshed (via the httpOnly refresh cookie) without every call site having
+// to know about it, and so a truly-dead session can redirect to /login.
+interface AuthHandlers {
+  onTokenRefreshed?: (resp: TokenResponse) => void;
+  onSessionExpired?: () => void;
+}
+let authHandlers: AuthHandlers = {};
+export function setAuthHandlers(handlers: AuthHandlers) {
+  authHandlers = handlers;
+}
+
+// Dedupes concurrent refresh attempts (e.g. several authenticated calls
+// firing on the same page load) into a single /auth/refresh request.
+let refreshPromise: Promise<TokenResponse | null> | null = null;
+function refreshOnce(): Promise<TokenResponse | null> {
+  if (!refreshPromise) {
+    refreshPromise = api.auth
+      .refresh()
+      .then((resp) => {
+        authHandlers.onTokenRefreshed?.(resp);
+        return resp;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit, token?: string, isRetry = false): Promise<T> {
   const headers: HeadersInit = {
     ...(init?.headers ?? {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (res.status === 401 && token && !isRetry) {
+    const refreshed = await refreshOnce();
+    if (refreshed) {
+      return apiFetch<T>(path, init, refreshed.token, true);
+    }
+    authHandlers.onSessionExpired?.();
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status}: ${text}`);
@@ -320,6 +360,23 @@ export const api = {
   },
 
   observations: {
+    create: (
+      body: {
+        speciesName: string;
+        scientificName?: string;
+        topConfidence: number;
+        imageStorageKey: string;
+        latitude?: number | null;
+        longitude?: number | null;
+      },
+      token: string
+    ) =>
+      apiFetch<ObservationDto>("/api/v1/observations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }, token),
+
     getAll: (token: string, myOnly = true) =>
       apiFetch<ObservationDto[]>(`/api/v1/observations?myOnly=${myOnly}`, {}, token),
 

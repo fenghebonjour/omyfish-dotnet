@@ -111,3 +111,6 @@ frontend-install:
 
 frontend-build:
 	cd frontend/omyfish-web && npm run build
+
+frontend-test:
+	cd frontend/omyfish-web && npm test

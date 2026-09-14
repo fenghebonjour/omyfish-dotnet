@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
-import { api, TokenResponse } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { api, setAuthHandlers, TokenResponse } from "@/lib/api";
 
 interface AuthState {
   token: string | null;
@@ -21,6 +22,37 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({ token: null, userId: null, email: null });
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+
+  const persistAuth = useCallback((resp: TokenResponse) => {
+    localStorage.setItem("omyfish_token", resp.token);
+    localStorage.setItem("omyfish_userId", resp.userId);
+    localStorage.setItem("omyfish_email", resp.email);
+  }, []);
+
+  const clearStorage = useCallback(() => {
+    localStorage.removeItem("omyfish_token");
+    localStorage.removeItem("omyfish_userId");
+    localStorage.removeItem("omyfish_email");
+  }, []);
+
+  // Lets apiFetch silently refresh an expired access token mid-session (via
+  // the httpOnly refresh cookie) and keep this context's state in sync, or
+  // force a logout + redirect if the refresh cookie itself is dead.
+  useEffect(() => {
+    setAuthHandlers({
+      onTokenRefreshed: (resp) => {
+        persistAuth(resp);
+        setAuth({ token: resp.token, userId: resp.userId, email: resp.email });
+      },
+      onSessionExpired: () => {
+        clearStorage();
+        setAuth({ token: null, userId: null, email: null });
+        sessionStorage.setItem("omyfish_session_expired", "1");
+        router.push("/login");
+      },
+    });
+  }, [persistAuth, clearStorage, router]);
 
   useEffect(() => {
     const token = localStorage.getItem("omyfish_token");
@@ -41,31 +73,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch(() => clearStorage())
         .finally(() => setIsLoading(false));
     }
-  }, []);
-
-  const persistAuth = (resp: TokenResponse) => {
-    localStorage.setItem("omyfish_token", resp.token);
-    localStorage.setItem("omyfish_userId", resp.userId);
-    localStorage.setItem("omyfish_email", resp.email);
-  };
-
-  const clearStorage = () => {
-    localStorage.removeItem("omyfish_token");
-    localStorage.removeItem("omyfish_userId");
-    localStorage.removeItem("omyfish_email");
-  };
+  }, [persistAuth, clearStorage]);
 
   const login = useCallback(async (email: string, password: string) => {
     const resp: TokenResponse = await api.auth.login(email, password);
     persistAuth(resp);
     setAuth({ token: resp.token, userId: resp.userId, email: resp.email });
-  }, []);
+  }, [persistAuth]);
 
   const logout = useCallback(() => {
     clearStorage();
     setAuth({ token: null, userId: null, email: null });
     api.auth.logout().catch(() => {});
-  }, []);
+  }, [clearStorage]);
 
   return (
     <AuthContext.Provider value={{ ...auth, login, logout, isAuthenticated: !!auth.token, isLoading }}>
