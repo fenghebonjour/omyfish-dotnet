@@ -62,7 +62,6 @@ omyfish-dotnet/
     shared/
       OMyFish.Shared.BuildingBlocks/   ← CQRS interfaces, AggregateRoot
       OMyFish.Shared.Contracts/        ← Integration events
-  frontend/omyfish-web/        ← Next.js 15 frontend (/, /timing, /observations, /notifications, /login, /register)
   infrastructure/
     kubernetes/                ← Deployments, HPA, Ingress
     helm/omyfish/              ← Helm chart
@@ -71,6 +70,11 @@ omyfish-dotnet/
   docker-compose.yml
   Makefile
 ```
+
+**Frontend:** not vendored here — extracted to its own repo/image, shared across every
+omyfish-* backend: https://github.com/fenghebonjour/omyfish-frontend (Next.js 15, /, /timing,
+/observations, /notifications, /login, /register). `docker-compose.yml`'s `frontend` service
+pulls a pinned tag; develop the frontend itself by cloning that repo directly.
 
 ## Architecture
 

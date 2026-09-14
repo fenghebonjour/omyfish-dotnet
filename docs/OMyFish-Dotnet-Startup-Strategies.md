@@ -40,7 +40,7 @@ Confirm: dotnet --version, node --version
 
 ### Clone the sibling repos first
 
-> **cd ~/ git clone https://github.com/fenghebonjour/omyfish-dotnet git clone https://github.com/fenghebonjour/omyfish-ai git clone https://github.com/fenghebonjour/omyfish-python # omyfish-ai expects checkpoints/metadata mounted from omyfish-python: # ../omyfish-python/checkpoints/best.pt # ../omyfish-python/data/metadata/fish_info.json**
+> **cd ~/ git clone https://github.com/fenghebonjour/omyfish-dotnet git clone https://github.com/fenghebonjour/omyfish-ai git clone https://github.com/fenghebonjour/omyfish-python git clone https://github.com/fenghebonjour/omyfish-frontend # omyfish-ai expects checkpoints/metadata mounted from omyfish-python: # ../omyfish-python/checkpoints/best.pt # ../omyfish-python/data/metadata/fish_info.json**
 
 ### Step-by-step
 ### Start infrastructure in Docker (not app services)
@@ -90,11 +90,13 @@ Each service opens its own console window. Breakpoints work across all projects 
 
 > **WSL-path gotcha (Visual Studio on Windows) If the repo lives on the WSL filesystem (\\wsl.localhost\...) but you F5 from Visual Studio on Windows, the services often start as processes but hang before Kestrel binds -- nothing ends up listening on :8081-:8083, and the frontend shows "Failed to fetch". The config file-watcher also thrashes across the UNC boundary (endless "Loading proxy data from config" on the gateway). The same projects run fine from the CLI: dotnet run --project <svc> --launch-profile <name> (add DOTNET_hostBuilder__reloadConfigOnChange=false to silence the reload thrash), which binds the ports correctly but gives no breakpoints. For breakpoint debugging with the repo in WSL, run the debugger inside WSL -- VS Code + the WSL extension, or JetBrains Rider -- so the .NET process runs next to the code instead of over the UNC share.**
 ### Run the frontend separately
-The Next.js frontend is not part of the .slnx. Open a separate terminal:
+The Next.js frontend is not part of the .slnx, and no longer lives in this repo — it's
+extracted to https://github.com/fenghebonjour/omyfish-frontend, cloned as a sibling directory
+above. Open a separate terminal:
 
-> **cd frontend/omyfish-web npm install npm run dev        # -> http://localhost:3000**
+> **cd ../omyfish-frontend npm install npm run dev        # -> http://localhost:3000**
 
-Set NEXT_PUBLIC_API_URL=http://localhost:8080 in frontend/.env.local
+Set NEXT_PUBLIC_API_URL=http://localhost:8080 in ../omyfish-frontend/.env.local
 
 | Advantages ✓  Full VS debugger: breakpoints, hot reload, call stack ✓  IntelliSense across all Clean Architecture layers ✓  Edit & Continue on .NET code ✓  omyfish-ai runs once and is reused by every service that calls it | Drawbacks ✗  Manual launchSettings.json config per service ✗  Frontend always needs a separate terminal ✗  Requires cloning 2 extra sibling repos (omyfish-ai, omyfish-python) ✗  Infra and AI service both require Docker running |
 | --- | --- |
