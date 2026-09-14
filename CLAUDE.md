@@ -61,11 +61,17 @@ src/
       OMyFish.SpeciesService.Infrastructure/ MongoDB.Driver (species catalog), EF Core (predictions), AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
     NotificationService/OMyFish.NotificationService/  Web API (notifications read/mark-read) + MassTransit consumers
-frontend/omyfish-web/                       Next.js 15 + TypeScript (pages: / [Timing], /identify, /regs, /observations, /notifications, /login, /register)
 infrastructure/kubernetes/                  K8s manifests
 infrastructure/helm/omyfish/                Helm chart
 migrations/                                 Raw SQL (applied by make migrate)
 ```
+
+**Frontend:** not vendored in this repo. The Next.js app that used to live at
+`frontend/omyfish-web/` was extracted to its own repo/image, shared across every
+omyfish-* backend — https://github.com/fenghebonjour/omyfish-frontend. `docker-compose.yml`'s
+`frontend` service pulls a pinned tag (`ghcr.io/fenghebonjour/omyfish-frontend:<tag>`); bump
+that tag to pick up frontend changes. To develop the frontend itself, clone that repo
+directly — there's no `frontend-dev`/`frontend-build` here anymore.
 
 ## Architecture: Clean Architecture
 

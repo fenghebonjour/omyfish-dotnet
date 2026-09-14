@@ -255,14 +255,15 @@ services:
 
   # ─── Frontend ─────────────────────────────────────────────────────────────
 
+  # Extracted to its own repo/image so it can be shared, versioned, and
+  # patched once for every omyfish-* backend instead of vendored per-repo —
+  # see https://github.com/fenghebonjour/omyfish-frontend. NEXT_PUBLIC_API_URL
+  # is baked in at that repo's build time (defaults to :8080, matching every
+  # backend's gateway port), not settable here at runtime.
   frontend:
-    build:
-      context: ./frontend/omyfish-web
-      dockerfile: Dockerfile
+    image: ghcr.io/fenghebonjour/omyfish-frontend:dd75e97
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: "http://localhost:8080"
     depends_on:
       api-gateway: { condition: service_healthy }
     networks: [omyfish-net]

@@ -101,16 +101,3 @@ minio-create-buckets:
 	docker compose exec minio mc mb local/omyfish-images --ignore-existing
 	docker compose exec minio mc mb local/omyfish-exports --ignore-existing
 
-# ─── Frontend ──────────────────────────────────────────────────────────────────
-
-frontend-dev:
-	cd frontend/omyfish-web && npm run dev
-
-frontend-install:
-	cd frontend/omyfish-web && npm install
-
-frontend-build:
-	cd frontend/omyfish-web && npm run build
-
-frontend-test:
-	cd frontend/omyfish-web && npm test
