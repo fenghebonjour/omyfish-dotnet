@@ -34,7 +34,7 @@ AI inference is no longer bundled inside this repo. It now lives in a standalone
 ### Prerequisites
 Visual Studio 2022 v17.8+ with .NET 10 workload
 Docker Desktop (for infra containers and for the standalone omyfish-ai service)
-Node 20 (for the Next.js frontend)
+Node 22+ (matches omyfish-frontend's Dockerfile, node:22-alpine)
 The omyfish-ai and omyfish-python repos cloned as sibling directories next to omyfish-dotnet
 Confirm: dotnet --version, node --version
 
@@ -97,6 +97,15 @@ above. Open a separate terminal:
 > **cd ../omyfish-frontend npm install npm run dev        # -> http://localhost:3000**
 
 Set NEXT_PUBLIC_API_URL=http://localhost:8080 in ../omyfish-frontend/.env.local
+
+> **Stray dev-server gotcha (Option 1's separate frontend terminal) If that terminal is closed
+> uncleanly (backgrounded, Ctrl-Z'd, or the window killed without stopping the process), the
+> `next dev` process can survive as an orphan still holding port 3000. Symptom: `localhost:3000`
+> requests connect but hang and time out with 0 bytes, instead of a clean connection-refused --
+> including later, if you switch to Option 2 and `make up` starts the Dockerized frontend, since
+> the orphan silently intercepts traffic in front of it. Find it with `ss -tlnp | grep 3000` (look
+> for a `next-server`/`node` process, not Docker's own forwarding) and kill it before starting
+> the container. `make up`/`make build-up` now warn automatically when this happens.**
 
 | Advantages ✓  Full VS debugger: breakpoints, hot reload, call stack ✓  IntelliSense across all Clean Architecture layers ✓  Edit & Continue on .NET code ✓  omyfish-ai runs once and is reused by every service that calls it | Drawbacks ✗  Manual launchSettings.json config per service ✗  Frontend always needs a separate terminal ✗  Requires cloning 2 extra sibling repos (omyfish-ai, omyfish-python) ✗  Infra and AI service both require Docker running |
 | --- | --- |
