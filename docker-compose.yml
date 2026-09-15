@@ -264,6 +264,8 @@ services:
     image: ghcr.io/fenghebonjour/omyfish-frontend:dd75e97
     ports:
       - "3000:3000"
+    environment:
+      - HOSTNAME=0.0.0.0
     depends_on:
       api-gateway: { condition: service_healthy }
     networks: [omyfish-net]

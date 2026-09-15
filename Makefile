@@ -5,6 +5,10 @@
 # Uses the external ai-service (../omyfish-ai's own compose) if it's already up on
 # :8000; otherwise falls back to starting this repo's bundled copy (profiles: [bundled]).
 up:
+	@HOLDER=$$(ss -ltnp 2>/dev/null | awk '$$4 ~ /:3000$$/ && /users:/ && $$0 !~ /docker-proxy/'); \
+	if [ -n "$$HOLDER" ]; then \
+		echo "warning: port 3000 is already in use by another process on the host ($$HOLDER) — the frontend container may start but be unreachable; stop that process first (e.g. a local 'npm run dev')"; \
+	fi
 	@if curl -sf http://localhost:8000/health >/dev/null 2>&1; then \
 		docker compose up -d; \
 	else \
@@ -18,6 +22,10 @@ up:
 
 # Use when code, dependencies, or Dockerfiles changed — rebuilds images first
 build-up:
+	@HOLDER=$$(ss -ltnp 2>/dev/null | awk '$$4 ~ /:3000$$/ && /users:/ && $$0 !~ /docker-proxy/'); \
+	if [ -n "$$HOLDER" ]; then \
+		echo "warning: port 3000 is already in use by another process on the host ($$HOLDER) — the frontend container may start but be unreachable; stop that process first (e.g. a local 'npm run dev')"; \
+	fi
 	@if curl -sf http://localhost:8000/health >/dev/null 2>&1; then \
 		docker compose up -d --build; \
 	else \
