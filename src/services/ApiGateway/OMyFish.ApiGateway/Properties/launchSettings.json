@@ -10,7 +10,7 @@
         "ReverseProxy__Clusters__species-cluster__Destinations__primary__Address": "http://localhost:56144",
         "ReverseProxy__Clusters__observations-cluster__Destinations__primary__Address": "http://localhost:56146"
       },
-      "applicationUrl": "https://localhost:56139;http://localhost:56140"
+      "applicationUrl": "https://localhost:8081;http://localhost:8080"
     }
   }
 }

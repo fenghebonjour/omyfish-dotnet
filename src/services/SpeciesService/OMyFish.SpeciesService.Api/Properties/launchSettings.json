@@ -13,7 +13,9 @@
         "RabbitMQ__Password": "omyfish_dev",
         "MinIO__Endpoint": "localhost:9000",
         "MinIO__AccessKey": "omyfish",
-        "MinIO__SecretKey": "omyfish_dev"
+        "MinIO__SecretKey": "omyfish_dev",
+        "MongoDB__ConnectionString": "mongodb://omyfish:omyfish_dev@localhost:27017/omyfish?authSource=admin",
+        "MongoDB__Database": "omyfish"
       },
       "applicationUrl": "https://localhost:56141;http://localhost:56144"
     }

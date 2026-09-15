@@ -4,6 +4,7 @@
       "commandName": "Project",
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development",
+        "ConnectionStrings__Default": "Host=localhost;Database=omyfish;Username=omyfish;Password=omyfish_dev",
         "RabbitMQ__Host": "localhost",
         "RabbitMQ__Username": "omyfish",
         "RabbitMQ__Password": "omyfish_dev"

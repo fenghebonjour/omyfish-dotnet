@@ -46,7 +46,7 @@ Confirm: dotnet --version, node --version
 ### Start infrastructure in Docker (not app services)
 The .NET services run locally but need Postgres, RabbitMQ, MinIO, and Jaeger. Bring up only infra:
 
-> **docker compose up -d postgres rabbitmq minio jaeger**
+> **docker compose up -d postgres rabbitmq minio jaeger mongodb**
 
 ### Start the shared AI service
 Run omyfish-ai standalone -- this is no longer built inside omyfish-dotnet. It serves both fish ID (POST /predict) and the Bite Score forecast (GET /bite-score/*, its bite_prediction module) that the frontend /timing page renders via SpeciesService.
@@ -66,15 +66,15 @@ IdentityService -- DB + JWT:
 
 SpeciesService -- DB + JWT + AI + RabbitMQ (+ optional seed):
 
-> **"ConnectionStrings__Default": "Host=localhost;Database=omyfish;Username=omyfish;Password=omyfish_dev", "Jwt__Secret": "dev-secret-change-in-production-min-32-chars", "AIService__BaseUrl": "http://localhost:8000", "RabbitMQ__Host": "localhost", "Seeding__MetadataPath": "../omyfish-python/data/metadata/fish_info.json"**
+> **"ConnectionStrings__Default": "Host=localhost;Database=omyfish;Username=omyfish;Password=omyfish_dev", "Jwt__Secret": "dev-secret-change-in-production-min-32-chars", "AIService__BaseUrl": "http://localhost:8000", "RabbitMQ__Host": "localhost", "MongoDB__ConnectionString": "mongodb://omyfish:omyfish_dev@localhost:27017/omyfish?authSource=admin", "MongoDB__Database": "omyfish", "Seeding__MetadataPath": "../omyfish-python/data/metadata/fish_info.json"**
 
 ObservationService -- DB + JWT + MinIO + RabbitMQ:
 
 > **"ConnectionStrings__Default": "Host=localhost;Database=omyfish;Username=omyfish;Password=omyfish_dev", "Jwt__Secret": "dev-secret-change-in-production-min-32-chars", "RabbitMQ__Host": "localhost", "MinIO__Endpoint": "localhost:9000", "MinIO__AccessKey": "omyfish", "MinIO__SecretKey": "omyfish_dev"**
 
-NotificationService (worker, no DB) -- RabbitMQ only (username/password default to guest/guest):
+NotificationService -- DB (notifications read/mark-read) + RabbitMQ (username/password default to guest/guest):
 
-> **"RabbitMQ__Host": "localhost"**
+> **"ConnectionStrings__Default": "Host=localhost;Database=omyfish;Username=omyfish;Password=omyfish_dev", "RabbitMQ__Host": "localhost"**
 
 ApiGateway has no connection string -- it just needs the same Jwt__Secret as the others so tokens validate across services.
 
