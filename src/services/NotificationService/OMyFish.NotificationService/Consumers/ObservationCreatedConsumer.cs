@@ -1,6 +1,7 @@
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using OMyFish.NotificationService.Entities;
 using OMyFish.NotificationService.Persistence;
 using OMyFish.Shared.Contracts.Events;
@@ -28,6 +29,12 @@ public class ObservationCreatedConsumer : IConsumer<ObservationCreatedEvent>
         // Broker redelivery (retry, at-least-once delivery) must not create a duplicate
         // notification — dedupe by the publisher's MessageId before inserting
         // (BACKLOG.md item F, WEAKNESS_AUDIT.md §2.4).
+        //
+        // The AnyAsync check below is only a fast path, not the guarantee: two concurrent
+        // redeliveries of the same message can both pass it before either commits (TOCTOU),
+        // so the uq_notifications_source_event_id constraint is the real dedup mechanism —
+        // a unique-violation on SaveChangesAsync means someone else already inserted this
+        // message's notification, which is exactly the safe no-op we want.
         var messageId = context.MessageId ?? Guid.NewGuid();
         if (await _db.Notifications.AnyAsync(n => n.SourceEventId == messageId, context.CancellationToken))
         {
@@ -42,7 +49,16 @@ public class ObservationCreatedConsumer : IConsumer<ObservationCreatedEvent>
             $"Your observation of {evt.SpeciesName} has been recorded.",
             messageId);
         _db.Notifications.Add(notification);
-        await _db.SaveChangesAsync(context.CancellationToken);
+
+        try
+        {
+            await _db.SaveChangesAsync(context.CancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            _logger.LogInformation("Concurrent duplicate delivery of message {MessageId} — skipping", messageId);
+            _db.Entry(notification).State = EntityState.Detached;
+        }
 
         _logger.LogInformation(
             "Notification persisted: {NotificationId} for user {UserId}",

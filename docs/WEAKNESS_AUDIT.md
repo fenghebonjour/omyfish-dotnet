@@ -294,7 +294,13 @@ retry policy (and RabbitMQ's at-least-once delivery generally) means a
 message *will* be redelivered eventually.
 
 **Fix:** key notifications by the source event's message id and use an
-upsert / unique-constraint-then-ignore pattern:
+upsert / unique-constraint-then-ignore pattern. A bare `AnyAsync` check
+before `SaveChangesAsync` is not itself the guarantee — it's a
+time-of-check-to-time-of-use race: two concurrent redeliveries of the same
+message can both pass the check before either commits, and the second's
+`SaveChangesAsync` then throws on the unique constraint instead of no-op'ing.
+The constraint has to be paired with a catch that treats that specific
+violation as the safe no-op it is:
 ```csharp
 // migration: add a unique index
 // ALTER TABLE notifications ADD CONSTRAINT uq_notifications_source_event UNIQUE (source_event_id);
@@ -304,10 +310,17 @@ public async Task Consume(ConsumeContext<ObservationCreatedEvent> context)
     var messageId = context.MessageId ?? throw new InvalidOperationException("Message must have an id");
 
     var exists = await _db.Notifications.AnyAsync(n => n.SourceEventId == messageId);
-    if (exists) return; // already processed — safe no-op on redelivery
+    if (exists) return; // fast path — not itself sufficient, see below
 
     _db.Notifications.Add(Notification.FromObservationCreated(context.Message, messageId));
-    await _db.SaveChangesAsync();
+    try
+    {
+        await _db.SaveChangesAsync();
+    }
+    catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+    {
+        // someone else committed the same messageId between our AnyAsync and SaveChangesAsync — safe no-op
+    }
 }
 ```
 
