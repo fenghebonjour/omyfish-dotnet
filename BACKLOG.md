@@ -571,3 +571,22 @@ stale). Every sub-tier is now closed — see each section below for detail.
   common Helm convention. Verified with `helm lint` (0 failures) and `helm
   template` (all 14 resources — 6 Deployments, 6 Services, 2 HPAs — render as
   valid YAML); not verified against a real cluster (no `helm install` run).
+
+---
+
+## [ ] G — Live multi-user features (WebSocket)
+
+**Status:** NOT STARTED (added 2026-09-20). Idea only, not committed scope.
+
+Live multi-user features: a shared catch feed, a fishing-trip or tournament
+leaderboard, or "someone near you just logged a catch". This is the only case
+where WebSocket is the natural choice, because the server has to push events
+nobody asked for.
+
+Other candidates (Regs Advisor streaming, Timing page) are one-way and better
+served by SSE or polling; single-photo identify should stay plain REST. Not
+tracked here.
+
+Existing pieces this would build on: `ObservationCreatedEvent` already flows
+through RabbitMQ to NotificationService, and
+`GET /api/v1/observations/nearby` already does the radius query.
