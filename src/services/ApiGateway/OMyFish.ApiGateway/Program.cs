@@ -47,16 +47,18 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
-// Restricted to the known frontend origin. AllowCredentials is required now that the
-// refresh token travels as an httpOnly cookie instead of the response body
-// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3) — safe only because the origin is a specific
+// Restricted to the known frontend origins (comma-separated, so the React frontend on :3000
+// and the Angular twin on :4200 can run side by side). AllowCredentials is required now that
+// the refresh token travels as an httpOnly cookie instead of the response body
+// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3) — safe only because every origin is a specific
 // known value, never a wildcard, per CORS rules.
-var allowedOrigin = builder.Configuration["Cors__AllowedOrigin"]
-                 ?? builder.Configuration["Cors:AllowedOrigin"]
-                 ?? "http://localhost:3000";
+var allowedOrigins = (builder.Configuration["Cors__AllowedOrigin"]
+                   ?? builder.Configuration["Cors:AllowedOrigin"]
+                   ?? "http://localhost:3000,http://localhost:4200")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
 builder.Services.AddCors(opts => opts.AddDefaultPolicy(policy => policy
-    .WithOrigins(allowedOrigin)
+    .WithOrigins(allowedOrigins)
     .AllowAnyMethod()
     .AllowAnyHeader()
     .AllowCredentials()));
