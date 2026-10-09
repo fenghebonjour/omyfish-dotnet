@@ -261,7 +261,7 @@ services:
   # is baked in at that repo's build time (defaults to :8080, matching every
   # backend's gateway port), not settable here at runtime.
   frontend:
-    image: ghcr.io/fenghebonjour/omyfish-frontend:dd75e97
+    image: ghcr.io/fenghebonjour/omyfish-frontend:c95f634
     ports:
       - "3000:3000"
     environment:
