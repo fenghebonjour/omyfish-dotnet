@@ -42,6 +42,12 @@ public interface IPaymentGateway
     /// succeeding and SaveChangesAsync()).
     Task<IReadOnlyList<ReconciliationCandidate>> ListRecentSubscriptionsAsync(
         DateTime since, CancellationToken ct = default);
+
+    /// A hosted self-service session (cancel/upgrade/invoice history) for this customer, if the
+    /// processor has one. Null for processors with no portal equivalent (PayPal, Adyen) or when
+    /// unconfigured.
+    Task<string?> CreatePortalSessionAsync(
+        string customerId, string returnUrl, CancellationToken ct = default);
 }
 
 public sealed record ReconciliationCandidate(

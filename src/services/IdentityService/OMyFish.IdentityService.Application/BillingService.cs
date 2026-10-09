@@ -162,6 +162,21 @@ public class BillingService
         }
     }
 
+    /// Throws InvalidOperationException (-> 404) if the user has no subscription/customer id on
+    /// file. Returns null (-> 503, same distinction RefundAsync draws) when the processor has no
+    /// portal equivalent (PayPal/Adyen) or isn't configured.
+    public async Task<string?> CreatePortalSessionAsync(
+        Guid userId, string returnUrl, CancellationToken ct = default)
+    {
+        var sub = await _subscriptions.FindByUserIdAsync(userId, ct)
+            ?? throw new InvalidOperationException("No subscription for that user");
+        if (string.IsNullOrEmpty(sub.StripeCustomerId))
+            throw new InvalidOperationException("No payment processor customer on file");
+
+        var processor = _processors.ByName(sub.PaymentProcessor ?? "stripe");
+        return await processor.CreatePortalSessionAsync(sub.StripeCustomerId, returnUrl, ct);
+    }
+
     private static RefundResult ReplayedRefund(IdempotencyRecord record)
     {
         if (!record.Completed)
@@ -212,7 +227,7 @@ public class BillingService
                     || evt.ProviderStatus is "canceled" or "unpaid" or "incomplete_expired")
                     sub.Cancel();
                 else
-                    sub.Activate(sub.Plan ?? "monthly", evt.PeriodEnd, stripeSubscriptionId: evt.SubscriptionId);
+                    sub.Activate(evt.Plan ?? sub.Plan ?? "monthly", evt.PeriodEnd, stripeSubscriptionId: evt.SubscriptionId);
 
                 await _subscriptions.SaveChangesAsync(ct);
                 return true;
@@ -231,6 +246,16 @@ public class BillingService
                 if (sub is null) return false;
 
                 sub.RecordLastPaymentReference(evt.PaymentReference);
+                await _subscriptions.SaveChangesAsync(ct);
+                return true;
+            }
+            case "payment_failed":
+            {
+                if (evt.CustomerId is null) return false;
+                var sub = await _subscriptions.FindByStripeCustomerIdAsync(evt.CustomerId, ct);
+                if (sub is null) return false;
+
+                sub.MarkPastDue();
                 await _subscriptions.SaveChangesAsync(ct);
                 return true;
             }

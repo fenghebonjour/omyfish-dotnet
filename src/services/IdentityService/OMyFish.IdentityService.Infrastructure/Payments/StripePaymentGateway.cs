@@ -127,6 +127,8 @@ public class StripePaymentGateway : IPaymentGateway
                 "subscription_deleted", (Stripe.Subscription)stripeEvent.Data.Object, stripeEvent.Id),
             "setup_intent.succeeded" => FromSetupIntent(
                 (Stripe.SetupIntent)stripeEvent.Data.Object, stripeEvent.Id),
+            "invoice.payment_failed" => FromInvoicePaymentFailed(
+                (Stripe.Invoice)stripeEvent.Data.Object, stripeEvent.Id),
             _ => null,
         };
         return Task.FromResult(result);
@@ -155,13 +157,40 @@ public class StripePaymentGateway : IPaymentGateway
         return candidates;
     }
 
-    private static PaymentEvent FromSubscriptionEvent(string type, Stripe.Subscription sub, string eventId) =>
-        new(type, null, sub.CustomerId, sub.Id, null, sub.Status,
-            sub.Items?.Data?.FirstOrDefault()?.CurrentPeriodEnd, EventId: eventId, Processor: "stripe");
+    public async Task<string?> CreatePortalSessionAsync(
+        string customerId, string returnUrl, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(_secretKey)) return null;
+
+        var session = await new Stripe.BillingPortal.SessionService(Client).CreateAsync(
+            new Stripe.BillingPortal.SessionCreateOptions { Customer = customerId, ReturnUrl = returnUrl },
+            cancellationToken: ct);
+        return session.Url;
+    }
+
+    private PaymentEvent FromSubscriptionEvent(string type, Stripe.Subscription sub, string eventId) =>
+        new(type, null, sub.CustomerId, sub.Id, PlanForPriceId(sub.Items?.Data?.FirstOrDefault()?.Price?.Id),
+            sub.Status, sub.Items?.Data?.FirstOrDefault()?.CurrentPeriodEnd, EventId: eventId, Processor: "stripe");
 
     private static PaymentEvent FromSetupIntent(Stripe.SetupIntent setupIntent, string eventId) =>
         new("payment_method_attached", null, setupIntent.CustomerId, null, null, null, null,
             setupIntent.PaymentMethodId, eventId, Processor: "stripe");
+
+    private static PaymentEvent? FromInvoicePaymentFailed(Stripe.Invoice invoice, string eventId)
+    {
+        var subscriptionId = invoice.Parent?.SubscriptionDetails?.SubscriptionId;
+        if (string.IsNullOrEmpty(subscriptionId)) return null;
+        return new PaymentEvent(
+            "payment_failed", null, invoice.CustomerId, subscriptionId, null, null, null,
+            EventId: eventId, Processor: "stripe");
+    }
+
+    /// Reverses _prices to recover our plan name from a Stripe price id on a webhook event.
+    private string? PlanForPriceId(string? priceId)
+    {
+        if (priceId is null) return null;
+        return _prices.FirstOrDefault(kv => kv.Value == priceId).Key;
+    }
 
     private static async Task<string> FindOrCreateCustomerAsync(
         Stripe.StripeClient client, Guid userId, string email, CancellationToken ct)

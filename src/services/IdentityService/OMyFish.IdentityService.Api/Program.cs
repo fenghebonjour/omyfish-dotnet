@@ -352,6 +352,24 @@ app.MapPost("/api/v1/billing/payment-method/setup", async (
         : Results.Ok(new SetupIntentResponse(intent.Processor, intent.CustomerId, intent.ClientSecret));
 }).RequireAuthorization();
 
+app.MapPost("/api/v1/billing/portal-session", async (
+    PortalSessionRequest req, ClaimsPrincipal principal, BillingService billing) =>
+{
+    if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+        return Results.Unauthorized();
+    try
+    {
+        var url = await billing.CreatePortalSessionAsync(userId, req.ReturnUrl);
+        return url is null
+            ? Results.Problem("No self-service portal is available for this payment processor.", statusCode: 503)
+            : Results.Ok(new PortalSessionResponse(url));
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.NotFound();
+    }
+}).RequireAuthorization();
+
 app.MapPost("/api/v1/billing/webhook/{processor}", async (
     string processor, HttpRequest request, PaymentProcessorRegistry processors, BillingService billing) =>
 {
@@ -509,6 +527,8 @@ record RegisterRequest(string Email, string Password, string? DisplayName);
 record CheckoutRequest(string Plan);
 record CheckoutResponse(string Processor, string? ClientSecret, string SubscriptionId, string Status);
 record SetupIntentResponse(string Processor, string CustomerId, string ClientSecret);
+record PortalSessionRequest(string ReturnUrl);
+record PortalSessionResponse(string Url);
 record RefundRequest(long? AmountCents);
 record GrantRequest(int? Days, string? Plan);
 record SubscriptionDto(string Status, string? Plan, DateTime? TrialEnd, DateTime? CurrentPeriodEnd, string? PaymentProcessor);

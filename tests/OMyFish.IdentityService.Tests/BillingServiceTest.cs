@@ -319,6 +319,72 @@ public class BillingServiceTest
     }
 
     [Fact]
+    public async Task ApplyEventAsync_SubscriptionUpdated_PlanOnEvent_OverwritesStoredPlan()
+    {
+        // A Portal-initiated upgrade must actually change the stored plan — Java found this bug
+        // in two separate adapters (the event carried the new plan but nothing read it).
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.Activate("monthly", null, "cus_123", "sub_456");
+        _subscriptions.FindByStripeCustomerIdAsync("cus_123", Arg.Any<CancellationToken>()).Returns(sub);
+
+        await _billing.ApplyEventAsync(new PaymentEvent(
+            "subscription_updated", null, "cus_123", "sub_456", "yearly", "active", null));
+
+        Assert.Equal("yearly", sub.Plan);
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_SubscriptionUpdated_NoPlanOnEvent_KeepsStoredPlan()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.Activate("monthly", null, "cus_123", "sub_456");
+        _subscriptions.FindByStripeCustomerIdAsync("cus_123", Arg.Any<CancellationToken>()).Returns(sub);
+
+        await _billing.ApplyEventAsync(new PaymentEvent(
+            "subscription_updated", null, "cus_123", "sub_456", null, "active", null));
+
+        Assert.Equal("monthly", sub.Plan);
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_PaymentFailed_MarksPastDue()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.Activate("monthly", null, "cus_123", "sub_456");
+        _subscriptions.FindByStripeCustomerIdAsync("cus_123", Arg.Any<CancellationToken>()).Returns(sub);
+
+        var handled = await _billing.ApplyEventAsync(new PaymentEvent(
+            "payment_failed", null, "cus_123", "sub_456", null, null, null));
+
+        Assert.True(handled);
+        Assert.Equal("past_due", sub.EffectiveStatus);
+    }
+
+    [Fact]
+    public async Task CreatePortalSessionAsync_DelegatesToPaymentGateway()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.AttachProcessor("stripe", "cus_123", "sub_456");
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.CreatePortalSessionAsync("cus_123", "https://app.example.com/account", Arg.Any<CancellationToken>())
+            .Returns("https://billing.stripe.com/session/abc");
+
+        var url = await _billing.CreatePortalSessionAsync(UserId, "https://app.example.com/account");
+
+        Assert.Equal("https://billing.stripe.com/session/abc", url);
+    }
+
+    [Fact]
+    public async Task CreatePortalSessionAsync_NoCustomerIdOnFile_Throws()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _billing.CreatePortalSessionAsync(UserId, "https://app.example.com/account"));
+    }
+
+    [Fact]
     public async Task ApplyEventAsync_UnknownCustomer_ReturnsFalse()
     {
         _subscriptions.FindByStripeCustomerIdAsync("cus_ghost", Arg.Any<CancellationToken>())

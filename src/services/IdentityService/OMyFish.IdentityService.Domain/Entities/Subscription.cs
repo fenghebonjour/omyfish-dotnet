@@ -6,7 +6,7 @@ public sealed class Subscription
 
     public Guid Id { get; private set; }
     public Guid UserId { get; private set; }
-    public string Status { get; private set; } = "trialing"; // trialing|active|canceled|expired
+    public string Status { get; private set; } = "trialing"; // trialing|active|past_due|canceled|expired
     public string? Plan { get; private set; }                // monthly|yearly
     public DateTime? TrialEnd { get; private set; }
     public DateTime? CurrentPeriodEnd { get; private set; }
@@ -64,6 +64,15 @@ public sealed class Subscription
     {
         PaymentProcessor = processor;
         StripeCustomerId = customerId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// Stripe keeps retrying a failed renewal for days before actually canceling —
+    /// collapsing straight to Cancel() here would cut off a still-maybe-paying customer
+    /// too early.
+    public void MarkPastDue()
+    {
+        Status = "past_due";
         UpdatedAt = DateTime.UtcNow;
     }
 

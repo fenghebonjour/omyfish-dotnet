@@ -214,4 +214,9 @@ public class AdyenPaymentGateway : IPaymentGateway
         // subscription object to list; this would have to query captured payments by
         // shopperReference/merchantReference instead).
         => Task.FromResult<IReadOnlyList<ReconciliationCandidate>>([]);
+
+    public Task<string?> CreatePortalSessionAsync(string customerId, string returnUrl, CancellationToken ct = default)
+        // Adyen has no hosted self-service portal equivalent to Stripe's (BACKLOG.md item J.1)
+        // — cancel/upgrade for Adyen subscribers is admin-assisted for now.
+        => Task.FromResult<string?>(null);
 }

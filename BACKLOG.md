@@ -868,38 +868,53 @@ case). Item I is now fully done — all four sub-items complete.
 
 ---
 
-## [ ] J — Payment module parity, phase 3: Customer Portal, plan propagation, past_due
+## [x] J — Payment module parity, phase 3: Customer Portal, plan propagation, past_due
 
-**Status:** NOT STARTED (added 2026-10-10). Port of the *payment-specific*
-parts of `omyfish-java`'s item J (not change-password/nav-wiring — those
-are account features, not payments, and the frontend is shared across all
-three backends now anyway, so no per-repo UI work is needed here at all,
+**Status:** DONE (2026-10-10). Port of the *payment-specific* parts of
+`omyfish-java`'s item J (not change-password/nav-wiring — those are
+account features, not payments, and the frontend is shared across all
+three backends now anyway, so no per-repo UI work was needed here at all,
 only API support for what the shared frontend already calls).
 
-1. **Stripe Customer Portal.** `POST /billing/portal-session` → Stripe's
-   Billing Portal `Session.Create`, PayPal/Adyen gateways return
-   null/not-supported (no portal equivalent for either — same decision
-   Java made, item J.5). The shared frontend's `/account` "Manage billing"
-   button already expects this exact shape (`{url}`) and a
-   `paymentProcessor` field on the subscription response to decide
-   whether to show it — until this ships, that button just shows the
-   "contact support" fallback for every user here, gracefully, not broken.
-2. **Webhook plan propagation.** Java found the webhook handler for
-   `customer.subscription.updated` never read which price/plan the event
-   was actually about, so a Portal-initiated upgrade silently kept
-   showing the old plan — and PayPal's adapter had the identical bug.
-   When porting the webhook handling, check this specifically rather than
-   assuming it's fine: does `ApplyEventAsync`'s event mapping read the
-   plan/price off the event, or only status/period-end?
-3. **Past_due status.** Add a `PastDue` status (Stripe keeps retrying a
-   failed renewal for days before actually canceling; collapsing straight
-   to `Canceled` cuts off a still-maybe-paying customer too early), driven
-   by a new `invoice.payment_failed` webhook case. The shared frontend's
-   `/account` page already has the banner for this
-   (`sub.status === "past_due"`) — again, just needs the backend to ever
-   send that status.
+1. ~~Stripe Customer Portal~~ — **DONE.** `POST /api/v1/billing/portal-session`
+   (`PortalSessionRequest{ReturnUrl}` → `PortalSessionResponse{Url}`, the
+   exact shape confirmed against `omyfish-frontend`'s `api.billing
+   .portalSession`, not assumed) → `BillingService.CreatePortalSessionAsync`
+   → `IPaymentGateway.CreatePortalSessionAsync`, implemented in
+   `StripePaymentGateway` via `Stripe.BillingPortal.SessionService
+   .CreateAsync`; `PayPalPaymentGateway`/`AdyenPaymentGateway` both return
+   null (no portal equivalent for either, same decision Java made, item
+   J.5). Same 404-vs-503 split as `RefundAsync`: no subscription/no
+   customer id on file throws (→404), no portal for this processor
+   returns null (→503, which the shared frontend's "contact support"
+   fallback already handles gracefully).
+2. ~~Webhook plan propagation~~ — **DONE, and the bug was real here too.**
+   Checked deliberately rather than assumed fine, per this item's own
+   warning: dotnet's `StripePaymentGateway.FromSubscriptionEvent` passed
+   `Plan: null` unconditionally — the exact bug Java found, now ported to
+   a *third* implementation after Stripe and PayPal in Java. Fixed by
+   adding `PlanForPriceId` (reverses `_prices`, same as the Java sibling's
+   `planForPriceId` and this repo's own `PayPalPaymentGateway
+   .PlanForPlanId`, which — unlike Stripe's — had already been wired
+   correctly when it was first ported in item I, so this was Stripe-only).
+   `BillingService.ApplyEventEffectsAsync`'s `subscription_updated` case
+   also silently never read `evt.Plan` at all (always fell back to
+   `sub.Plan ?? "monthly"`) — fixed to `evt.Plan ?? sub.Plan ?? "monthly"`.
+3. ~~Past_due status~~ — **DONE.** `Subscription.MarkPastDue()` sets
+   `Status = "past_due"`; driven by a new `invoice.payment_failed` Stripe
+   webhook case (`StripePaymentGateway.FromInvoicePaymentFailed`, reading
+   the subscription id off `invoice.Parent.SubscriptionDetails
+   .SubscriptionId` — confirmed via reflection against the installed
+   Stripe.net 52.1.1 DLL rather than assumed, since property names on
+   nested invoice types shift across API versions) mapped to a new
+   `payment_failed` `BillingService.ApplyEventEffectsAsync` case.
 
-Verified: nothing yet — not started.
+Verified: `dotnet build omyfish-dotnet.slnx` clean. `dotnet test
+omyfish-dotnet.slnx` — **127/127 green** (8 new `BillingServiceTest`
+cases: portal session delegate + no-customer-id-throws, plan-overwritten/
+plan-kept-on-no-event-plan for the propagation fix, payment_failed →
+past_due, plus the item-I Adyen cases already counted in that item's own
+total).
 
 ---
 

@@ -270,6 +270,11 @@ public class PayPalPaymentGateway : IPaymentGateway
         // gap (BACKLOG.md item I.6 in the Java sibling) — add this once it's actually needed.
         => Task.FromResult<IReadOnlyList<ReconciliationCandidate>>([]);
 
+    public Task<string?> CreatePortalSessionAsync(string customerId, string returnUrl, CancellationToken ct = default)
+        // PayPal has no hosted self-service portal equivalent to Stripe's (BACKLOG.md item J.1)
+        // — cancel/upgrade for PayPal subscribers is admin-assisted for now.
+        => Task.FromResult<string?>(null);
+
     private static string? ApproveLink(List<Link>? links) =>
         links?.FirstOrDefault(l => l.rel == "approve")?.href;
 
