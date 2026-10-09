@@ -339,6 +339,10 @@ app.MapPost("/api/v1/billing/checkout", async (
     {
         return Results.Conflict(new { error = ex.Message });
     }
+    catch (AlreadySubscribedException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
 }).RequireAuthorization();
 
 app.MapPost("/api/v1/billing/payment-method/setup", async (

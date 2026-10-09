@@ -918,31 +918,46 @@ total).
 
 ---
 
-## [ ] K — Payment module parity, phase 4: guard against a duplicate subscription
+## [x] K — Payment module parity, phase 4: guard against a duplicate subscription
 
-**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item K
-— found live, not in testing, after item J shipped there: a second checkout
-call with a different idempotency key created a second, separate, active
-Stripe subscription for a user who already had one, both billing monthly.
-Confirmed with real Stripe data (`stripe invoices list --customer <id>`),
-not assumed.
+**Status:** DONE (2026-10-10). Port of `omyfish-java`'s item K — found live
+there, not in testing, after item J shipped: a second checkout call with a
+different idempotency key created a second, separate, active Stripe
+subscription for a user who already had one, both billing monthly.
+Confirmed there with real Stripe data (`stripe invoices list --customer
+<id>`), not assumed.
 
-The actual lesson, worth carrying over deliberately rather than reinventing:
-idempotency keys (phase I) only guarantee "this exact request happens once,"
-never "this user doesn't already have what they're asking to create" — a
-business invariant needs its own explicit check. Port the fix as a check at
-the top of the checkout flow: if the user's subscription row already has a
-processor id attached and an `Active`/`PastDue` status, reject with
-`409 Conflict` before ever reserving an idempotency key or calling the
-processor. A user who's only `Trialing` (no processor attached yet) is
-unaffected.
+The actual lesson, carried over deliberately rather than reinvented:
+idempotency keys (phase I) only guarantee "this exact request happens
+once," never "this user doesn't already have what they're asking to
+create" — a business invariant needs its own explicit check.
+`BillingService.StartCheckoutAsync` now checks this right after the
+same-key replay path (so a genuine retry of an in-flight/completed
+checkout is unaffected) and before reserving a new idempotency key or
+touching the processor at all: if the user's subscription row already has
+`StripeSubscriptionId` set and `EffectiveStatus` is `active` or
+`past_due`, it throws a new `AlreadySubscribedException`, mapped to `409
+Conflict` at the `/api/v1/billing/checkout` endpoint — a distinct type
+from `InvalidOperationException` (->404, "no such thing") and
+`IdempotencyConflictException` (->409, "this key is still in flight") so
+the three failure modes stay distinguishable in the endpoint's catch
+chain the way Java's three separate `catch` blocks are. A `trialing` user
+with no processor attached yet is unaffected (explicit test coverage, not
+just inferred from the condition).
 
-Also worth porting as a known, not-yet-fixed gap rather than silently
-copying only the parts that look good: Java's webhook-to-local-row matching
-is keyed on the processor's customer id alone, not on which specific
-subscription an event is about — safe only because this phase's guard makes
-a customer having two live subscriptions at once much rarer, not because
-that matching was actually fixed. Decide whether to fix it here while
-porting, or carry the same documented gap forward.
+Also carried forward deliberately, not fixed: Java's webhook-to-local-row
+matching is keyed on the processor's customer id alone, not on which
+specific subscription an event is about — safe only because this phase's
+guard makes a customer having two live subscriptions at once much rarer,
+not because that matching was actually fixed. dotnet's matching
+(`FindByStripeCustomerIdAsync`) has the identical shape and the identical
+gap; left as-is to match Java's own documented decision rather than
+diverging behavior between the two ports for a case neither has actually
+hit.
 
-Verified: nothing yet — not started.
+Verified: `dotnet build omyfish-dotnet.slnx` clean. `dotnet test
+omyfish-dotnet.slnx` — **130/130 green** (3 new `BillingServiceTest`
+cases: active-subscriber guard fires without calling the gateway,
+past_due-subscriber guard fires too, trialing-with-no-processor is
+unaffected). All four payment-module-parity items (H, I, J, K) are now
+done.

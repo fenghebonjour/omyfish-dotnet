@@ -92,6 +92,48 @@ public class BillingServiceTest
     }
 
     [Fact]
+    public async Task StartCheckoutAsync_AlreadyActiveSubscription_ThrowsWithoutCallingGateway()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.AttachProcessor("stripe", "cus_123", "sub_456");
+        sub.Activate("monthly", DateTime.UtcNow.AddDays(30));
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+
+        await Assert.ThrowsAsync<AlreadySubscribedException>(
+            () => _billing.StartCheckoutAsync(UserId, "yearly", IdempotencyKey));
+        await _payments.DidNotReceive().CreateSubscriptionIntentAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartCheckoutAsync_AlreadyPastDueSubscription_Throws()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.AttachProcessor("stripe", "cus_123", "sub_456");
+        sub.Activate("monthly", DateTime.UtcNow.AddDays(30));
+        sub.MarkPastDue();
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+
+        await Assert.ThrowsAsync<AlreadySubscribedException>(
+            () => _billing.StartCheckoutAsync(UserId, "yearly", IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task StartCheckoutAsync_TrialingWithNoProcessorAttached_IsUnaffected()
+    {
+        var user = User.Create("a@b.c", "hash");
+        var sub = Subscription.StartTrial(UserId, 7);
+        _users.FindByIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(user);
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.CreateSubscriptionIntentAsync(UserId, "a@b.c", "monthly", IdempotencyKey, Arg.Any<CancellationToken>())
+            .Returns(new SubscriptionIntentResult("stripe", "cus_123", "sub_456", "secret_abc", "incomplete"));
+
+        var intent = await _billing.StartCheckoutAsync(UserId, "monthly", IdempotencyKey);
+
+        Assert.NotNull(intent);
+    }
+
+    [Fact]
     public async Task StartCheckoutAsync_GatewayNotConfigured_ReturnsNull()
     {
         var user = User.Create("a@b.c", "hash");

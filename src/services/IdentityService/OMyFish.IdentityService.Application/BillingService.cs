@@ -57,6 +57,18 @@ public class BillingService
         if (existing is not null && !IsOrphaned(existing))
             return await ReplayedCheckoutAsync(RequireOwner(existing, userId), userId, ct);
 
+        // A second checkout call with a genuinely different idempotency key (e.g. a double
+        // click, or a retest against an account that's already paying) must not create a
+        // second live subscription for the same user — the idempotency-key check above only
+        // catches a retry of the *same* key. Found live in the Java sibling: two separate
+        // "active" Stripe subscriptions, both billing the same user every month.
+        var currentSub = await _subscriptions.FindByUserIdAsync(userId, ct);
+        if (currentSub is not null && !string.IsNullOrEmpty(currentSub.StripeSubscriptionId)
+            && currentSub.EffectiveStatus is "active" or "past_due")
+        {
+            throw new AlreadySubscribedException("Already subscribed");
+        }
+
         var processor = _processors.DefaultProcessor();
         if (processor is null) return null;
 
@@ -317,3 +329,8 @@ public class BillingService
 public sealed record BillingStats(
     int Users, int Trialing, int Active, int Canceled, int Expired,
     int ActiveMonthly, int ActiveYearly, double MrrCad);
+
+/// A business-invariant violation distinct from "not found" (InvalidOperationException, ->404
+/// elsewhere in this service) or a replayed idempotency key (IdempotencyConflictException) —
+/// the user is asking to create a subscription they already have. ->409 at the endpoint.
+public sealed class AlreadySubscribedException(string message) : Exception(message);
