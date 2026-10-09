@@ -590,3 +590,160 @@ tracked here.
 Existing pieces this would build on: `ObservationCreatedEvent` already flows
 through RabbitMQ to NotificationService, and
 `GET /api/v1/observations/nearby` already does the radius query.
+
+---
+
+## [ ] H — Payment module parity, phase 1: 3DS checkout, refund, saved payment methods
+
+**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item H.
+Java's full payment module (items H/I/J/K there) was built and hardened over
+a full session, including one real incident (a double-charge bug, caught and
+fixed with real Stripe data — item K). This repo's billing module today
+(`OMyFish.IdentityService.Application/BillingService.cs`, 137 lines;
+`Infrastructure/Payments/StripePaymentGateway.cs`, 80 lines;
+`Application/Interfaces/IPaymentGateway.cs`, 2 methods; wired directly in
+`Api/Program.cs`, not a separate controller) is close to where Java's was
+*before* item H: a working hosted-redirect Stripe checkout + webhook +
+admin grant/revoke/extend-trial/stats, nothing beyond that. Phases H/I/J/K
+here mirror Java's four items in the same order, scoped to what this repo
+is actually missing — not re-verified against Java's current code line by
+line, so expect adjustment once work starts.
+
+1. **Checkout: hosted-redirect → PaymentIntent/Elements (real 3DS).**
+   `CreateCheckoutUrlAsync`'s hosted-redirect flow doesn't give the frontend
+   (the shared `omyfish-frontend` repo, already wired for this — see
+   `StripeCheckoutForm.tsx`) a client secret to confirm 3DS against. Port
+   Java's approach: create a Stripe Subscription with
+   `payment_behavior=default_incomplete`, return `{processor, clientSecret,
+   subscriptionId, status}` instead of a redirect URL. Needs a
+   `CheckoutResponse`-equivalent DTO and `IPaymentGateway`'s
+   `CreateCheckoutUrlAsync` replaced with something returning that shape
+   (`CreateSubscriptionIntentAsync`?) — exact signature TBD when this
+   starts, since `IPaymentGateway` will need reshaping for item I's
+   multi-processor work anyway (see below).
+2. **Admin refund.** No refund capability exists at all (no `RefundView`
+   equivalent, nothing in `BillingService.cs`). Port
+   `BillingService.refund()` / `AdminController`'s
+   `POST /api/v1/admin/subscriptions/{userId}/refund` — resolve the
+   subscription's latest paid invoice to a PaymentIntent, refund that,
+   leave local subscription status untouched (refund and cancel are
+   separate decisions, same as Java).
+3. **Saved payment method / SetupIntent.** No `payment-method/setup`
+   equivalent exists. Port `POST /billing/payment-method/setup` (Stripe
+   SetupIntent, `usage=off_session`) plus the `setup_intent.succeeded`
+   webhook case that sets the resulting payment method as the customer's
+   default via `Customer.Update`.
+
+Verified: nothing yet — not started.
+
+---
+
+## [ ] I — Payment module parity, phase 2: idempotency, dedup, reconciliation, multi-processor
+
+**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item I,
+including its later multi-processor and idempotency-key-reuse-after-crash
+additions. Depends on phase H landing first (same dependency order Java had).
+
+1. **Idempotency keys on checkout/refund.** Today a client retry re-enters
+   `BillingService` and calls Stripe again — port Java's fix: an
+   `Idempotency-Key` request header on checkout and refund, persisted as
+   `(key, userId, endpoint) → result` in a new table *before* calling
+   Stripe (migration needed — see `002_add_subscriptions.sql` for the
+   existing migration-numbering convention; this would be `003_...`),
+   short-circuiting a repeat key to the stored result; the same key also
+   passed to Stripe's own idempotency-key support as Stripe.NET's
+   `RequestOptions.IdempotencyKey`. Include Java's stale-reservation
+   recovery (a reservation left incomplete past ~1 minute — the process
+   died mid-call — gets retried with the same key rather than orphaned
+   forever; `IdempotencyRecord`/`BillingService.isOrphaned` in Java).
+2. **Webhook event dedup.** Port a `ProcessedWebhookEvent`-equivalent table
+   keyed by the provider's event id, checked before `ApplyEventAsync`
+   re-applies effects, so a redelivered webhook is a no-op.
+3. **Reconciliation job.** Port the periodic job that lists each
+   processor's recent subscriptions and repairs any local row that never
+   got linked (the crash-between-Stripe-call-and-save window) — Java's
+   `ReconciliationService`/`PaymentPort.listRecentSubscriptions`.
+4. **Multi-processor: PayPal + Adyen adapters.** `IPaymentGateway` needs
+   the same shape Java's `PaymentPort` ended up with
+   (`createSubscriptionIntent`/`createSetupIntent`/
+   `setDefaultPaymentMethod`/`refundSubscription`/`verifyWebhook`/
+   `isConfigured`/`listRecentSubscriptions`/`createPortalSession` — the
+   last one from phase J below) — write `PayPalPaymentGateway` and
+   `AdyenPaymentGateway` behind it, selected via a
+   `PaymentProcessorRegistry`-equivalent (default processor + per-name
+   lookup), same as Java's `PaymentProcessorRegistry`. `Subscription`
+   needs a `PaymentProcessor` column added (it currently only has
+   `StripeCustomerId`/`StripeSubscriptionId`, Stripe-specific naming,
+   no record of *which* processor created them — Java kept the Stripe-ish
+   column names but added a separate `paymentProcessor` field precisely
+   for this; same move here). PayPal/Adyen .NET SDK choice not yet
+   decided — check what's actually maintained/current before picking one,
+   don't assume Stripe.NET's ecosystem counterpart exists for each.
+
+Verified: nothing yet — not started.
+
+---
+
+## [ ] J — Payment module parity, phase 3: Customer Portal, plan propagation, past_due
+
+**Status:** NOT STARTED (added 2026-10-10). Port of the *payment-specific*
+parts of `omyfish-java`'s item J (not change-password/nav-wiring — those
+are account features, not payments, and the frontend is shared across all
+three backends now anyway, so no per-repo UI work is needed here at all,
+only API support for what the shared frontend already calls).
+
+1. **Stripe Customer Portal.** `POST /billing/portal-session` → Stripe's
+   Billing Portal `Session.Create`, PayPal/Adyen gateways return
+   null/not-supported (no portal equivalent for either — same decision
+   Java made, item J.5). The shared frontend's `/account` "Manage billing"
+   button already expects this exact shape (`{url}`) and a
+   `paymentProcessor` field on the subscription response to decide
+   whether to show it — until this ships, that button just shows the
+   "contact support" fallback for every user here, gracefully, not broken.
+2. **Webhook plan propagation.** Java found the webhook handler for
+   `customer.subscription.updated` never read which price/plan the event
+   was actually about, so a Portal-initiated upgrade silently kept
+   showing the old plan — and PayPal's adapter had the identical bug.
+   When porting the webhook handling, check this specifically rather than
+   assuming it's fine: does `ApplyEventAsync`'s event mapping read the
+   plan/price off the event, or only status/period-end?
+3. **Past_due status.** Add a `PastDue` status (Stripe keeps retrying a
+   failed renewal for days before actually canceling; collapsing straight
+   to `Canceled` cuts off a still-maybe-paying customer too early), driven
+   by a new `invoice.payment_failed` webhook case. The shared frontend's
+   `/account` page already has the banner for this
+   (`sub.status === "past_due"`) — again, just needs the backend to ever
+   send that status.
+
+Verified: nothing yet — not started.
+
+---
+
+## [ ] K — Payment module parity, phase 4: guard against a duplicate subscription
+
+**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item K
+— found live, not in testing, after item J shipped there: a second checkout
+call with a different idempotency key created a second, separate, active
+Stripe subscription for a user who already had one, both billing monthly.
+Confirmed with real Stripe data (`stripe invoices list --customer <id>`),
+not assumed.
+
+The actual lesson, worth carrying over deliberately rather than reinventing:
+idempotency keys (phase I) only guarantee "this exact request happens once,"
+never "this user doesn't already have what they're asking to create" — a
+business invariant needs its own explicit check. Port the fix as a check at
+the top of the checkout flow: if the user's subscription row already has a
+processor id attached and an `Active`/`PastDue` status, reject with
+`409 Conflict` before ever reserving an idempotency key or calling the
+processor. A user who's only `Trialing` (no processor attached yet) is
+unaffected.
+
+Also worth porting as a known, not-yet-fixed gap rather than silently
+copying only the parts that look good: Java's webhook-to-local-row matching
+is keyed on the processor's customer id alone, not on which specific
+subscription an event is about — safe only because this phase's guard makes
+a customer having two live subscriptions at once much rarer, not because
+that matching was actually fixed. Decide whether to fix it here while
+porting, or carry the same documented gap forward.
+
+Verified: nothing yet — not started.
