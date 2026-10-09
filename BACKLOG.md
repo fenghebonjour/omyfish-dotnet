@@ -593,9 +593,9 @@ through RabbitMQ to NotificationService, and
 
 ---
 
-## [ ] H — Payment module parity, phase 1: 3DS checkout, refund, saved payment methods
+## [x] H — Payment module parity, phase 1: 3DS checkout, refund, saved payment methods
 
-**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item H.
+**Status:** DONE (2026-10-10, uncommitted). Port of `omyfish-java`'s item H.
 Java's full payment module (items H/I/J/K there) was built and hardened over
 a full session, including one real incident (a double-charge bug, caught and
 fixed with real Stripe data — item K). This repo's billing module today
@@ -609,78 +609,262 @@ here mirror Java's four items in the same order, scoped to what this repo
 is actually missing — not re-verified against Java's current code line by
 line, so expect adjustment once work starts.
 
-1. **Checkout: hosted-redirect → PaymentIntent/Elements (real 3DS).**
-   `CreateCheckoutUrlAsync`'s hosted-redirect flow doesn't give the frontend
-   (the shared `omyfish-frontend` repo, already wired for this — see
-   `StripeCheckoutForm.tsx`) a client secret to confirm 3DS against. Port
-   Java's approach: create a Stripe Subscription with
-   `payment_behavior=default_incomplete`, return `{processor, clientSecret,
-   subscriptionId, status}` instead of a redirect URL. Needs a
-   `CheckoutResponse`-equivalent DTO and `IPaymentGateway`'s
-   `CreateCheckoutUrlAsync` replaced with something returning that shape
-   (`CreateSubscriptionIntentAsync`?) — exact signature TBD when this
-   starts, since `IPaymentGateway` will need reshaping for item I's
-   multi-processor work anyway (see below).
-2. **Admin refund.** No refund capability exists at all (no `RefundView`
-   equivalent, nothing in `BillingService.cs`). Port
-   `BillingService.refund()` / `AdminController`'s
-   `POST /api/v1/admin/subscriptions/{userId}/refund` — resolve the
-   subscription's latest paid invoice to a PaymentIntent, refund that,
-   leave local subscription status untouched (refund and cancel are
-   separate decisions, same as Java).
-3. **Saved payment method / SetupIntent.** No `payment-method/setup`
-   equivalent exists. Port `POST /billing/payment-method/setup` (Stripe
-   SetupIntent, `usage=off_session`) plus the `setup_intent.succeeded`
-   webhook case that sets the resulting payment method as the customer's
-   default via `Customer.Update`.
+1. ~~Checkout: hosted-redirect → PaymentIntent/Elements (real 3DS)~~ —
+   **DONE.** `IPaymentGateway.CreateCheckoutUrlAsync` (returned a redirect
+   URL) replaced with `CreateSubscriptionIntentAsync` returning a new
+   `SubscriptionIntentResult(CustomerId, SubscriptionId, ClientSecret,
+   Status)`. `StripePaymentGateway` now creates a `Stripe.Subscription`
+   directly (`PaymentBehavior = "default_incomplete"`, `Expand =
+   ["latest_invoice.confirmation_secret"]`) instead of a Checkout Session
+   — no more `SuccessUrl`/`CancelUrl`, so `appBaseUrl` was dropped from
+   the gateway's constructor entirely (nothing else used it; re-add when
+   phase J's portal session needs a return URL). `BillingService
+   .StartCheckoutAsync` replaces `CheckoutUrlAsync`, calling the new
+   `Subscription.AttachProcessor(customerId, subscriptionId)` (status
+   stays `trialing` — activation only happens off the webhook, same as
+   Java) instead of the old `checkout_completed`-webhook-driven
+   activation, which no longer exists as an event type since there's no
+   Checkout Session to complete. `POST /api/v1/billing/checkout` now
+   returns `{processor, clientSecret, subscriptionId, status}` — the
+   exact shape `omyfish-frontend`'s `CheckoutResponse` type expects,
+   confirmed by reading it, not assumed.
+   One real SDK-exploration note worth keeping: Stripe.net 52.1.1 doesn't
+   expose `Invoice.ConfirmationSecret` as a type name search alone would
+   suggest — had to confirm via `strings` on the installed DLL
+   (`InvoiceConfirmationSecret` type, `Subscription.LatestInvoice`
+   expandable-field property) before writing code that would compile
+   on the first try, rather than guessing and iterating blind.
+2. ~~Admin refund~~ — **DONE.** `BillingService.RefundAsync` +
+   `POST /api/v1/admin/subscriptions/{userId}/refund`, resolving the
+   subscription's latest paid invoice to a PaymentIntent via
+   `InvoicePaymentService` and refunding that; local subscription status
+   untouched (same separate-decision principle as Java). Kept Java's
+   404-vs-503 distinction deliberately rather than collapsing it: "no
+   subscription"/"no Stripe id on file" throws (→ 404), "processor not
+   configured or nothing to refund" returns `null` (→ 503) — a first
+   draft collapsed both into one exception type and lost that
+   distinction; caught and fixed before committing, not after.
+3. ~~Saved payment method / SetupIntent~~ — **DONE.**
+   `POST /api/v1/billing/payment-method/setup` (`Stripe.SetupIntent`,
+   `Usage = "off_session"`) plus a new `setup_intent.succeeded` webhook
+   case mapped to a `payment_method_attached` `PaymentEvent`, applied via
+   `BillingService.ApplyEventAsync` calling the gateway's new
+   `SetDefaultPaymentMethodAsync`. `Subscription` gained a parallel
+   `AttachProcessorCustomerId` (customer id known, no subscription id
+   yet — tokenizing a card pre-checkout) alongside `AttachProcessor`,
+   mirroring Java's same two-method split rather than overloading one
+   method with an empty-string sentinel (a first draft did exactly that
+   hack; fixed before committing).
 
-Verified: nothing yet — not started.
+Verified: `dotnet build` clean on the first try for `StripePaymentGateway.cs`
+(API surface confirmed against the actual DLL beforehand, not guessed);
+updated `BillingServiceTest.cs` (replaced the 3 stale checkout tests and the
+`checkout_completed` test, which no longer applies since there's no Checkout
+Session any more; added coverage for the new checkout/setup-intent/refund/
+payment-method-attached paths) — full `dotnet test omyfish-dotnet.slnx`:
+**107/107 passing** across all 5 test projects (identity-service's own 35,
+plus gateway/species/observation/notification untouched and still green).
 
 ---
 
-## [ ] I — Payment module parity, phase 2: idempotency, dedup, reconciliation, multi-processor
+## [x] I — Payment module parity, phase 2: idempotency, dedup, reconciliation, multi-processor
 
-**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item I,
-including its later multi-processor and idempotency-key-reuse-after-crash
-additions. Depends on phase H landing first (same dependency order Java had).
+**Status:** DONE (2026-10-10, uncommitted). Port of `omyfish-java`'s
+item I, including its later multi-processor and idempotency-key-reuse-after-
+crash additions.
 
-1. **Idempotency keys on checkout/refund.** Today a client retry re-enters
-   `BillingService` and calls Stripe again — port Java's fix: an
-   `Idempotency-Key` request header on checkout and refund, persisted as
-   `(key, userId, endpoint) → result` in a new table *before* calling
-   Stripe (migration needed — see `002_add_subscriptions.sql` for the
-   existing migration-numbering convention; this would be `003_...`),
-   short-circuiting a repeat key to the stored result; the same key also
-   passed to Stripe's own idempotency-key support as Stripe.NET's
-   `RequestOptions.IdempotencyKey`. Include Java's stale-reservation
-   recovery (a reservation left incomplete past ~1 minute — the process
-   died mid-call — gets retried with the same key rather than orphaned
-   forever; `IdempotencyRecord`/`BillingService.isOrphaned` in Java).
-2. **Webhook event dedup.** Port a `ProcessedWebhookEvent`-equivalent table
-   keyed by the provider's event id, checked before `ApplyEventAsync`
-   re-applies effects, so a redelivered webhook is a no-op.
-3. **Reconciliation job.** Port the periodic job that lists each
-   processor's recent subscriptions and repairs any local row that never
-   got linked (the crash-between-Stripe-call-and-save window) — Java's
-   `ReconciliationService`/`PaymentPort.listRecentSubscriptions`.
-4. **Multi-processor: PayPal + Adyen adapters.** `IPaymentGateway` needs
-   the same shape Java's `PaymentPort` ended up with
-   (`createSubscriptionIntent`/`createSetupIntent`/
-   `setDefaultPaymentMethod`/`refundSubscription`/`verifyWebhook`/
-   `isConfigured`/`listRecentSubscriptions`/`createPortalSession` — the
-   last one from phase J below) — write `PayPalPaymentGateway` and
-   `AdyenPaymentGateway` behind it, selected via a
-   `PaymentProcessorRegistry`-equivalent (default processor + per-name
-   lookup), same as Java's `PaymentProcessorRegistry`. `Subscription`
-   needs a `PaymentProcessor` column added (it currently only has
-   `StripeCustomerId`/`StripeSubscriptionId`, Stripe-specific naming,
-   no record of *which* processor created them — Java kept the Stripe-ish
-   column names but added a separate `paymentProcessor` field precisely
-   for this; same move here). PayPal/Adyen .NET SDK choice not yet
-   decided — check what's actually maintained/current before picking one,
-   don't assume Stripe.NET's ecosystem counterpart exists for each.
+1. ~~Idempotency keys on checkout/refund~~ — **DONE.**
+   `003_add_idempotency_keys.sql` (new migration, auto-discovered by DbUp
+   via the existing `EmbeddedResource Include="..\migrations\IdentityService\
+   *.sql"` glob in the `.csproj` — no project-file change needed, confirmed
+   by reading how `002_add_subscriptions.sql` already gets picked up the
+   same way, not assumed). `IdempotencyRecord` entity +
+   `IIdempotencyKeyRepository`, same shape as Java's: `FindAsync`/
+   `ReserveAsync` (translates a Postgres unique-violation on
+   `(idempotency_key, endpoint)` into `IdempotencyConflictException` by
+   catching `DbUpdateException` wrapping `Npgsql.PostgresException` with
+   `SqlState == "23505"`)/`SaveAsync`/`DeleteAsync`. `BillingService
+   .StartCheckoutAsync`/`RefundAsync` both gained an `idempotencyKey`
+   parameter and the full reserve → call → complete-or-delete flow, plus
+   the replay path for a repeated key and the orphaned-reservation retry
+   (`IsOrphaned`, 1-minute threshold, same as Java). The same key is also
+   passed to Stripe.NET's own `RequestOptions.IdempotencyKey` on both the
+   `Subscription.Create` and `Refund.Create` calls — the second,
+   independent layer Java's design relies on. `Makefile`'s manual
+   `migrate` fallback target updated to include the new file (it already
+   had a comment about a previous migration being missing there once —
+   `002_add_subscriptions.sql` — so kept that list in sync deliberately
+   rather than letting it drift again).
+2. ~~Webhook event dedup~~ — **DONE.** `004_add_processed_webhook_events.sql`
+   + `ProcessedWebhookEvent` entity/`IProcessedWebhookEventRepository`.
+   `BillingService.ApplyEventAsync` now checks `evt.EventId` against it
+   before delegating to the renamed `ApplyEventEffectsAsync` (the old
+   `ApplyEventAsync` body), recording the id after a handled event — exact
+   split Java uses between `applyEvent`/`applyEventEffects`. Needed adding
+   an `EventId` field to `PaymentEvent` (didn't exist before) and
+   populating it from `stripeEvent.Id` in `StripePaymentGateway
+   .VerifyWebhook`, which it also wasn't doing.
+3. ~~Reconciliation job~~ — **DONE.** `IPaymentGateway
+   .ListRecentSubscriptionsAsync(since, ct)` + a new `ReconciliationCandidate`
+   record; `StripePaymentGateway` implements it via
+   `SubscriptionService.ListAutoPagingAsync` with a `Created =
+   DateRangeOptions { GreaterThanOrEqual = since }` filter, reading the
+   `user_id`/`plan` metadata every checkout already attaches (API surface
+   — `ListAutoPagingAsync`, `DateRangeOptions` — confirmed via `strings`
+   on the installed DLL before writing code, same discipline as phase H,
+   and it built clean on the first try again). New `ReconciliationService`
+   (application layer, constructor takes `IPaymentGateway` directly —
+   deliberately not a registry yet, since sub-item 4 hasn't introduced one;
+   will change when it does) ported 1:1 from Java's `relink`/`resyncStatus`
+   split: relink repairs a missing/mismatched local link (creating a trial
+   row first if the user has none at all — `Subscription.StartTrial(userId,
+   0)`), resync replays through `BillingService.ApplyEventAsync` with no
+   `EventId` set so the webhook-dedup check from sub-item 2 doesn't
+   interfere. `POST /api/v1/admin/subscriptions/reconcile?lookbackHours=24`
+   added next to the other admin actions.
+   One C#-specific wrinkle Java's version doesn't hit: `BillingService
+   .ApplyEventAsync` had to be marked `virtual` so
+   `ReconciliationServiceTest` could substitute the concrete class directly
+   — NSubstitute (unlike Mockito) can't intercept a non-virtual member on a
+   class without an interface behind it.
+4. **Multi-processor: PayPal + Adyen adapters.** Split into a registry
+   scaffold (done this pass) and the two new adapters themselves (not yet
+   started).
 
-Verified: nothing yet — not started.
+   ~~Registry scaffold~~ — **DONE.** `IPaymentGateway` gained a `Name`
+   property; `SubscriptionIntentResult`/`SetupIntentResult`/
+   `ReconciliationCandidate`/`PaymentEvent` all gained a `Processor` field
+   (`PaymentEvent`'s defaults to `"stripe"` — every event constructed
+   before this was implicitly Stripe's, and making it required would have
+   forced touching every call site including every test for no behavioral
+   reason). New `PaymentProcessorRegistry` (ported 1:1 from Java's:
+   `DefaultProcessor()`, `Exists`, `Configured()`, `ByName` — throws
+   `InvalidOperationException` for unknown/unconfigured). `Subscription`
+   gained the `PaymentProcessor` column (`005_add_payment_processor_to_
+   subscriptions.sql`) and `AttachProcessor`/`AttachProcessorCustomerId`
+   both now take the processor name as their first argument.
+   `BillingService`'s constructor takes `PaymentProcessorRegistry` instead
+   of `IPaymentGateway` directly; checkout/setup use
+   `DefaultProcessor()`, refund resolves `ByName(sub.PaymentProcessor ??
+   "stripe")` (the `?? "stripe"` keeps every subscription created before
+   this column existed working), and the `payment_method_attached` case
+   resolves `ByName(evt.Processor)`. `ReconciliationService` now loops
+   `Configured()` across every registered gateway, matching Java's
+   multi-processor reconcile loop, instead of just the one gateway it had
+   before. `VerifyWebhook`'s signature changed from a single Stripe
+   signature string to a lower-cased header dictionary (`IPaymentGateway
+   .VerifyWebhook(string payload, IReadOnlyDictionary<string, string>
+   headers)`) — PayPal's webhook verification needs several headers, not
+   one, so this had to change now rather than being retrofitted once
+   PayPal's adapter exists. The webhook endpoint itself moved from
+   `POST /billing/webhook` (Stripe-only, hardcoded) to
+   `POST /billing/webhook/{processor}`, resolving the gateway by name.
+   **Found and fixed a real pre-existing gap while making that route
+   change, not something this work introduced:** the API gateway's
+   `billing-route` in `appsettings.json` required auth for *all* of
+   `/api/v1/billing/**`, including the webhook — meaning Stripe's webhook
+   could never have actually reached identity-service through the gateway
+   at all, before or after today's change. Added a more specific
+   `billing-webhook-route` entry with `AuthorizationPolicy: "Anonymous"`
+   ahead of the general one; added a test case to the existing
+   `GatewayAuthorizationTests` confirming `/api/v1/billing/webhook/stripe`
+   is reachable without a token while `/api/v1/billing/whatever` still
+   isn't.
+   Known minor gap, not chased further: `PaymentProcessorRegistry.ByName`
+   throwing for an unconfigured processor during refund falls into the
+   same `catch (InvalidOperationException) → 404` block as "no
+   subscription" — Java's equivalent would 503 there instead
+   (`IllegalStateException` vs `IllegalArgumentException`), but hitting
+   this requires an admin-misconfigured registry, not a normal user flow,
+   so it wasn't worth a new exception type for.
+
+   ~~PayPal adapter~~ — **DONE.** `PayPalPaymentGateway`, a plain
+   `HttpClient` port of Java's `RestClient`-based adapter — confirmed
+   Java uses no PayPal SDK at all, so neither does this (OAuth2
+   client-credentials token fetch with in-memory expiry caching,
+   `/v1/billing/subscriptions`, `/v3/vault/setup-tokens`,
+   `/v2/payments/captures/{id}/refund`,
+   `/v1/notifications/verify-webhook-signature`). Registered via a named
+   `HttpClient` (`AddHttpClient("paypal", ...)`, matching the
+   `AIServiceClient` convention already used in species-service — a typed
+   client didn't fit since this gateway takes several config strings
+   beyond just the `HttpClient`) and added to `PaymentProcessorRegistry`
+   alongside Stripe.
+   **A real interface-shape fix came out of this, not just a new
+   adapter:** `IPaymentGateway.VerifyWebhook` was synchronous, fine for
+   Stripe's purely-local HMAC check, but PayPal's verification calls
+   PayPal's own `/v1/notifications/verify-webhook-signature` endpoint —
+   genuine I/O. First draft used `.GetAwaiter().GetResult()` to force it
+   synchronous and match the old interface; caught that as the wrong fix
+   before committing and changed the interface itself to
+   `Task<PaymentEvent?> VerifyWebhookAsync(...)`, updating
+   `StripePaymentGateway` (wraps its sync result in `Task.FromResult`) and
+   the webhook endpoint's call site to match. Blocking on
+   `GetAwaiter().GetResult()` in ASP.NET Core risks a deadlock under
+   certain synchronization contexts and is exactly the kind of "looks
+   like it works, breaks under load" issue not worth leaving in just to
+   avoid touching the interface.
+   Same known gap as Java here, not a new one introduced: no
+   adapter-level unit tests for `PayPalPaymentGateway` (an HTTP-based
+   adapter needs a fake handler or similar to test without hitting
+   PayPal for real) — `BillingServiceTest` still only exercises
+   `IPaymentGateway` through mocks, same as it always has.
+   ~~Adyen adapter~~ — **DONE.** Picked back up from the "does not
+   compile" state left at the end of the last session: read 36.1.0's
+   actual API via its unpacked NuGet contents (`README.md` plus the XML
+   doc comments, and a throwaway reflection probe against the real
+   `Adyen.dll` for the generated plumbing types the XML doc comments
+   don't cover) instead of guessing from `strings` on the DLL, per that
+   session's own note. The real shape change from Java's version:
+   36.1.0 is DI/`IHostBuilder`-based (`services.AddPaymentsService()`/
+   `AddModificationsService()`/`AddWebhooksHandler()`, wired here via
+   `builder.Host.ConfigureCheckout(...)`/`ConfigureWebhooks(...)` in
+   `Program.cs`), not a `new Client(apiKey, environment)` you hand to a
+   `PaymentsApi` constructor directly. `AdyenPaymentGateway` takes
+   `IPaymentsService`/`IModificationsService`/`IWebhooksHandler` by DI
+   plus the same raw config strings the Stripe/PayPal gateways take.
+   `SessionsAsync`/`RefundCapturedPaymentAsync` return an `ISessionsApiResponse`/
+   `IRefundCapturedPaymentApiResponse` that only exposes `IsCreated` —
+   the actual `TryDeserializeCreatedResponse(out result)` lives on a
+   separate `ICreated<T>` interface the concrete response also
+   implements, found by reflecting on the real response type rather than
+   assumed from the Java method name.
+   **A real interface gap surfaced porting `refundSubscription`, not
+   something this work introduced:** Java's `PaymentPort.refundSubscription`
+   takes `lastPaymentReference` explicitly (Adyen has no subscription
+   object, so a refund needs the pspReference of the last captured
+   payment, not a subscription id) but dotnet's `IPaymentGateway
+   .RefundSubscriptionAsync` — written for Stripe/PayPal, which look the
+   latest payment up themselves from the subscription id — never had
+   that parameter. Added it as a trailing optional parameter (Stripe/
+   PayPal ignore it, so no existing call site needed more than a
+   recompile) rather than inventing an Adyen-only side channel. Storing
+   it required a new `Subscription.LastPaymentReference` column
+   (`006_add_last_payment_reference.sql`) populated by a new
+   `payment_captured` `BillingService.ApplyEventEffectsAsync` case —
+   Adyen's `AUTHORISATION` webhook is the only thing that ever emits that
+   event type, mapped by `AdyenPaymentGateway.VerifyWebhookAsync` the
+   same way Java's `verifyWebhook` does (the customer id is recovered
+   from the merchant reference we control, since there's no
+   shopperReference getter on a notification item). `PaymentEvent`
+   gained a matching trailing `PaymentReference` field for this, mirroring
+   Java's own field of the same purpose.
+   Same known gaps as Java here, not new ones: `ListRecentSubscriptionsAsync`
+   returns empty (Adyen isn't live yet — BACKLOG item I.6 in the Java
+   sibling); no adapter-level unit tests for `AdyenPaymentGateway` itself
+   (same reasoning as `PayPalPaymentGateway` — an SDK-backed adapter
+   needs a fake handler/transport to test without hitting Adyen for
+   real); `SetDefaultPaymentMethodAsync` is a documented no-op since
+   Adyen's webhook mapping never emits `payment_method_attached`.
+
+Verified: `dotnet build omyfish-dotnet.slnx` clean (API surface for every
+Adyen call confirmed via the unpacked package/reflection before writing
+code, not guessed — compiled clean on the first attempt after that).
+`dotnet test omyfish-dotnet.slnx` — **122/122 green** across all 5 test
+projects (3 new `BillingServiceTest` cases: refund threading
+`LastPaymentReference` through to the gateway, `payment_captured`
+recording it on a known subscription, and the unknown-customer no-op
+case). Item I is now fully done — all four sub-items complete.
 
 ---
 

@@ -1,6 +1,11 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Adyen.Checkout.Extensions;
+using Adyen.Checkout.Services;
+using Adyen.Core.Options;
+using Adyen.Webhooks.Extensions;
+using Adyen.Webhooks.Handlers;
 using DbUp;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -8,6 +13,7 @@ using Prometheus;
 using Scalar.AspNetCore;
 using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using OMyFish.IdentityService.Application;
@@ -30,18 +36,80 @@ builder.Services.AddDbContext<IdentityDbContext>(opts =>
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
 builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
+builder.Services.AddScoped<IIdempotencyKeyRepository, IdempotencyKeyRepository>();
+builder.Services.AddScoped<IProcessedWebhookEventRepository, ProcessedWebhookEventRepository>();
 
-// ── Stripe (test keys) — billing endpoints return 503 until configured ────────
-builder.Services.AddSingleton<IPaymentGateway>(_ => new StripePaymentGateway(
+// ── Payment processors (test keys) — billing endpoints return 503 until configured ────────
+builder.Services.AddSingleton(_ => new StripePaymentGateway(
     secretKey: builder.Configuration["Stripe__SecretKey"] ?? "",
     webhookSecret: builder.Configuration["Stripe__WebhookSecret"] ?? "",
     prices: new Dictionary<string, string>
     {
         ["monthly"] = builder.Configuration["Stripe__PriceMonthly"] ?? "",  // 5 CAD/month
         ["yearly"] = builder.Configuration["Stripe__PriceYearly"] ?? "",    // 29 CAD/year
-    },
-    appBaseUrl: builder.Configuration["App__BaseUrl"] ?? "http://localhost:3000"));
+    }));
+builder.Services.AddHttpClient("paypal", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["PayPal__BaseUrl"] ?? "https://api-m.sandbox.paypal.com");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddSingleton(sp => new PayPalPaymentGateway(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("paypal"),
+    clientId: builder.Configuration["PayPal__ClientId"] ?? "",
+    clientSecret: builder.Configuration["PayPal__ClientSecret"] ?? "",
+    webhookId: builder.Configuration["PayPal__WebhookId"] ?? "",
+    returnUrl: builder.Configuration["PayPal__ReturnUrl"] ?? "",
+    cancelUrl: builder.Configuration["PayPal__CancelUrl"] ?? "",
+    planIds: new Dictionary<string, string>
+    {
+        ["monthly"] = builder.Configuration["PayPal__PlanMonthly"] ?? "",
+        ["yearly"] = builder.Configuration["PayPal__PlanYearly"] ?? "",
+    }));
+// Adyen's SDK (36.1.0) registers its typed services via these IHostBuilder extensions rather
+// than plain IServiceCollection.AddSingleton — the shape its own README documents, and the one
+// that actually compiles against this version (see BACKLOG.md item I.4 for the version that
+// doesn't).
+builder.Host.ConfigureCheckout((context, services, config) =>
+{
+    config.ConfigureAdyenOptions(options =>
+    {
+        options.AdyenApiKey = context.Configuration["Adyen__ApiKey"] ?? "";
+        options.Environment = (context.Configuration["Adyen__Environment"] ?? "Test") == "Live"
+            ? AdyenEnvironment.Live : AdyenEnvironment.Test;
+        var liveUrlPrefix = context.Configuration["Adyen__LiveEndpointUrlPrefix"];
+        if (!string.IsNullOrEmpty(liveUrlPrefix)) options.LiveEndpointUrlPrefix = liveUrlPrefix;
+    });
+    services.AddPaymentsService();
+    services.AddModificationsService();
+});
+builder.Host.ConfigureWebhooks((context, services, config) =>
+{
+    config.ConfigureAdyenOptions(options =>
+    {
+        options.AdyenHmacKey = context.Configuration["Adyen__HmacKey"] ?? "";
+    });
+    services.AddWebhooksHandler();
+});
+builder.Services.AddSingleton(sp => new AdyenPaymentGateway(
+    sp.GetRequiredService<IPaymentsService>(),
+    sp.GetRequiredService<IModificationsService>(),
+    sp.GetRequiredService<IWebhooksHandler>(),
+    apiKey: builder.Configuration["Adyen__ApiKey"] ?? "",
+    merchantAccount: builder.Configuration["Adyen__MerchantAccount"] ?? "",
+    hmacKey: builder.Configuration["Adyen__HmacKey"] ?? "",
+    currency: builder.Configuration["Adyen__Currency"] ?? "CAD",
+    priceMonthlyCents: long.Parse(builder.Configuration["Adyen__PriceMonthlyCents"] ?? "500"),
+    priceYearlyCents: long.Parse(builder.Configuration["Adyen__PriceYearlyCents"] ?? "2900"),
+    returnUrl: builder.Configuration["Adyen__ReturnUrl"] ?? ""));
+builder.Services.AddSingleton(sp => new PaymentProcessorRegistry(
+    [
+        sp.GetRequiredService<StripePaymentGateway>(),
+        sp.GetRequiredService<PayPalPaymentGateway>(),
+        sp.GetRequiredService<AdyenPaymentGateway>(),
+    ],
+    defaultName: builder.Configuration["Payment__DefaultProcessor"] ?? "stripe"));
 builder.Services.AddScoped<BillingService>();
+builder.Services.AddScoped<ReconciliationService>();
 
 // ── JWT ───────────────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt__Secret"] ?? builder.Configuration["Jwt:Secret"];
@@ -242,20 +310,22 @@ app.MapGet("/api/v1/billing/me", async (ClaimsPrincipal principal, BillingServic
         return Results.Unauthorized();
     var sub = await billing.MySubscriptionAsync(userId);
     return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
+        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
 }).RequireAuthorization();
 
 app.MapPost("/api/v1/billing/checkout", async (
-    CheckoutRequest req, ClaimsPrincipal principal, BillingService billing) =>
+    CheckoutRequest req, ClaimsPrincipal principal, BillingService billing,
+    [FromHeader(Name = "Idempotency-Key")] string idempotencyKey) =>
 {
     if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
         return Results.Unauthorized();
     try
     {
-        var checkoutUrl = await billing.CheckoutUrlAsync(userId, req.Plan);
-        return checkoutUrl is null
-            ? Results.Problem("Stripe is not configured.", statusCode: 503)
-            : Results.Ok(new { checkoutUrl });
+        var intent = await billing.StartCheckoutAsync(userId, req.Plan, idempotencyKey);
+        return intent is null
+            ? Results.Problem("No payment processor is configured.", statusCode: 503)
+            : Results.Ok(new CheckoutResponse(
+                intent.Processor, intent.ClientSecret, intent.SubscriptionId, intent.Status));
     }
     catch (ArgumentException ex)
     {
@@ -265,16 +335,42 @@ app.MapPost("/api/v1/billing/checkout", async (
     {
         return Results.NotFound();
     }
+    catch (IdempotencyConflictException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
 }).RequireAuthorization();
 
-app.MapPost("/api/v1/billing/webhook", async (
-    HttpRequest request, IPaymentGateway payments, BillingService billing) =>
+app.MapPost("/api/v1/billing/payment-method/setup", async (
+    ClaimsPrincipal principal, BillingService billing) =>
 {
-    if (!payments.IsConfigured)
-        return Results.Problem("Stripe webhook is not configured.", statusCode: 503);
+    if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+        return Results.Unauthorized();
+    var intent = await billing.StartPaymentMethodSetupAsync(userId);
+    return intent is null
+        ? Results.Problem("No payment processor is configured.", statusCode: 503)
+        : Results.Ok(new SetupIntentResponse(intent.Processor, intent.CustomerId, intent.ClientSecret));
+}).RequireAuthorization();
 
+app.MapPost("/api/v1/billing/webhook/{processor}", async (
+    string processor, HttpRequest request, PaymentProcessorRegistry processors, BillingService billing) =>
+{
+    if (!processors.Exists(processor))
+        return Results.NotFound(new { error = $"Unknown payment processor: {processor}" });
+
+    IPaymentGateway gateway;
+    try
+    {
+        gateway = processors.ByName(processor);
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.Problem($"Payment processor is not configured: {processor}", statusCode: 503);
+    }
+
+    var headers = request.Headers.ToDictionary(h => h.Key.ToLowerInvariant(), h => h.Value.ToString());
     var payload = await new StreamReader(request.Body).ReadToEndAsync();
-    var evt = payments.VerifyWebhook(payload, request.Headers["Stripe-Signature"]!);
+    var evt = await gateway.VerifyWebhookAsync(payload, headers);
     if (evt is null)
         return Results.BadRequest(new { error = "Invalid webhook signature" });
 
@@ -314,6 +410,7 @@ app.MapGet("/api/v1/admin/subscriptions", async (BillingService billing) =>
         s.Plan,
         s.TrialEnd,
         s.CurrentPeriodEnd,
+        s.PaymentProcessor,
     }));
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
@@ -322,7 +419,7 @@ app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/grant", async (
 {
     var sub = await billing.GrantAsync(userId, req?.Plan ?? "yearly", req?.Days ?? 365);
     return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
+        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/revoke", async (
@@ -331,7 +428,7 @@ app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/revoke", async (
     var sub = await billing.RevokeAsync(userId);
     if (sub is null) return Results.NotFound();
     return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
+        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/extend-trial", async (
@@ -339,7 +436,39 @@ app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/extend-trial", async (
 {
     var sub = await billing.ExtendTrialAsync(userId, req?.Days ?? 7);
     return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd));
+        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
+
+app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/refund", async (
+    Guid userId, RefundRequest? req, BillingService billing,
+    [FromHeader(Name = "Idempotency-Key")] string idempotencyKey) =>
+{
+    try
+    {
+        var result = await billing.RefundAsync(userId, req?.AmountCents, idempotencyKey);
+        return result is null
+            ? Results.Problem("Payment processor is not configured or there is nothing to refund.", statusCode: 503)
+            : Results.Ok(new { refundId = result.RefundId, status = result.Status, amountCents = result.AmountCents });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 404);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 404);
+    }
+    catch (IdempotencyConflictException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
+
+app.MapPost("/api/v1/admin/subscriptions/reconcile", async (
+    long? lookbackHours, ReconciliationService reconciliation) =>
+{
+    var result = await reconciliation.ReconcileAsync(DateTime.UtcNow.AddHours(-(lookbackHours ?? 24)));
+    return Results.Ok(result);
 }).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
 
 app.Run();
@@ -378,8 +507,11 @@ static string CreateRefreshJwt(User user, SymmetricSecurityKey key)
 // ── Request/Response records ──────────────────────────────────────────────────
 record RegisterRequest(string Email, string Password, string? DisplayName);
 record CheckoutRequest(string Plan);
+record CheckoutResponse(string Processor, string? ClientSecret, string SubscriptionId, string Status);
+record SetupIntentResponse(string Processor, string CustomerId, string ClientSecret);
+record RefundRequest(long? AmountCents);
 record GrantRequest(int? Days, string? Plan);
-record SubscriptionDto(string Status, string? Plan, DateTime? TrialEnd, DateTime? CurrentPeriodEnd);
+record SubscriptionDto(string Status, string? Plan, DateTime? TrialEnd, DateTime? CurrentPeriodEnd, string? PaymentProcessor);
 record LoginRequest(string Email, string Password);
 record TokenResponse(string Token, Guid UserId, string Email, string Role);
 record UserDto(Guid Id, string Email, string? DisplayName, string Role);

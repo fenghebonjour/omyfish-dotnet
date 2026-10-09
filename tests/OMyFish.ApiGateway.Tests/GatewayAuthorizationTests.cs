@@ -69,6 +69,7 @@ public class GatewayAuthorizationTests : IClassFixture<WebApplicationFactory<Pro
     [Theory]
     [InlineData("/api/v1/auth/login")]
     [InlineData("/api/v1/species/identify")]
+    [InlineData("/api/v1/billing/webhook/stripe")]
     public async Task AnonymousPolicyRoute_WithoutToken_IsNotRejectedByAuth(string path)
     {
         var client = _factory.CreateClient();

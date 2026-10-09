@@ -82,6 +82,14 @@ migrate:
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/IdentityService/002_add_subscriptions.sql
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/IdentityService/003_add_idempotency_keys.sql
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/IdentityService/004_add_processed_webhook_events.sql
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/IdentityService/005_add_payment_processor_to_subscriptions.sql
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
+	  -f migrations/IdentityService/006_add_last_payment_reference.sql
+	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/SpeciesService/001_initial_species_schema.sql
 	psql "postgresql://omyfish:omyfish_dev@localhost:5432/omyfish" \
 	  -f migrations/ObservationService/001_initial_observation_schema.sql

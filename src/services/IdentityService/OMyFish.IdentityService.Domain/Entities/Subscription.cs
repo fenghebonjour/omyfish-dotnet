@@ -12,6 +12,11 @@ public sealed class Subscription
     public DateTime? CurrentPeriodEnd { get; private set; }
     public string? StripeCustomerId { get; private set; }
     public string? StripeSubscriptionId { get; private set; }
+    public string? PaymentProcessor { get; private set; } // stripe | paypal | adyen
+    /// Adyen has no subscription object, so refunding it needs the pspReference of the last
+    /// captured payment rather than a subscription id — unused by Stripe/PayPal, which look
+    /// up the latest payment from their own subscription object instead.
+    public string? LastPaymentReference { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
 
@@ -41,6 +46,30 @@ public sealed class Subscription
         CurrentPeriodEnd = periodEnd;
         StripeCustomerId = stripeCustomerId ?? StripeCustomerId;
         StripeSubscriptionId = stripeSubscriptionId ?? StripeSubscriptionId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// Records a processor's ids as soon as they're known, without changing status.
+    public void AttachProcessor(string processor, string customerId, string subscriptionId)
+    {
+        PaymentProcessor = processor;
+        StripeCustomerId = customerId;
+        StripeSubscriptionId = subscriptionId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// Records the processor customer id alone, e.g. after tokenizing a payment method
+    /// pre-checkout, when there's no subscription id yet.
+    public void AttachProcessorCustomerId(string processor, string customerId)
+    {
+        PaymentProcessor = processor;
+        StripeCustomerId = customerId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void RecordLastPaymentReference(string reference)
+    {
+        LastPaymentReference = reference;
         UpdatedAt = DateTime.UtcNow;
     }
 

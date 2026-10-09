@@ -12,13 +12,25 @@ public class BillingServiceTest
     private readonly ISubscriptionRepository _subscriptions = Substitute.For<ISubscriptionRepository>();
     private readonly IUserRepository _users = Substitute.For<IUserRepository>();
     private readonly IPaymentGateway _payments = Substitute.For<IPaymentGateway>();
+    private readonly IIdempotencyKeyRepository _idempotencyKeys = Substitute.For<IIdempotencyKeyRepository>();
+    private readonly IProcessedWebhookEventRepository _processedWebhookEvents =
+        Substitute.For<IProcessedWebhookEventRepository>();
+    private readonly PaymentProcessorRegistry _processors;
     private readonly BillingService _billing;
 
+    private const string IdempotencyKey = "idem-key-1";
     private static readonly Guid UserId = Guid.NewGuid();
 
     public BillingServiceTest()
     {
-        _billing = new BillingService(_subscriptions, _users, _payments);
+        _payments.Name.Returns("stripe");
+        _payments.IsConfigured.Returns(true);
+        _processors = new PaymentProcessorRegistry([_payments], "stripe");
+        _billing = new BillingService(_subscriptions, _users, _processors, _idempotencyKeys, _processedWebhookEvents);
+        // No existing reservation by default; ReserveAsync hands back a fresh record built
+        // from whatever args the call used, same as a real first-time reservation would.
+        _idempotencyKeys.ReserveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(info => IdempotencyRecord.Reserve((string)info[0], (string)info[1], (Guid)info[2]));
     }
 
     [Fact]
@@ -45,47 +57,236 @@ public class BillingServiceTest
     }
 
     [Fact]
-    public async Task CheckoutUrlAsync_InvalidPlan_Throws()
+    public async Task StartCheckoutAsync_InvalidPlan_Throws()
     {
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _billing.CheckoutUrlAsync(UserId, "lifetime"));
+            () => _billing.StartCheckoutAsync(UserId, "lifetime", IdempotencyKey));
     }
 
     [Fact]
-    public async Task CheckoutUrlAsync_UnknownUser_Throws()
+    public async Task StartCheckoutAsync_UnknownUser_Throws()
     {
         _users.FindByIdAsync(UserId, Arg.Any<CancellationToken>()).Returns((User?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _billing.CheckoutUrlAsync(UserId, "monthly"));
+            () => _billing.StartCheckoutAsync(UserId, "monthly", IdempotencyKey));
     }
 
     [Fact]
-    public async Task CheckoutUrlAsync_ValidPlan_DelegatesToGateway()
+    public async Task StartCheckoutAsync_ValidPlan_AttachesProcessorIdsWithoutActivating()
     {
         var user = User.Create("a@b.c", "hash");
+        var sub = Subscription.StartTrial(UserId, 7);
         _users.FindByIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(user);
-        _payments.CreateCheckoutUrlAsync(UserId, "a@b.c", "yearly", Arg.Any<CancellationToken>())
-            .Returns("https://stripe.example/checkout/abc");
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.CreateSubscriptionIntentAsync(UserId, "a@b.c", "yearly", IdempotencyKey, Arg.Any<CancellationToken>())
+            .Returns(new SubscriptionIntentResult("stripe", "cus_123", "sub_456", "secret_abc", "incomplete"));
 
-        var url = await _billing.CheckoutUrlAsync(UserId, "yearly");
+        var intent = await _billing.StartCheckoutAsync(UserId, "yearly", IdempotencyKey);
 
-        Assert.Equal("https://stripe.example/checkout/abc", url);
+        Assert.NotNull(intent);
+        Assert.Equal("secret_abc", intent!.ClientSecret);
+        Assert.Equal("cus_123", sub.StripeCustomerId);
+        Assert.Equal("sub_456", sub.StripeSubscriptionId);
+        Assert.Equal("trialing", sub.EffectiveStatus);
     }
 
     [Fact]
-    public async Task ApplyEventAsync_CheckoutCompleted_ActivatesSubscription()
+    public async Task StartCheckoutAsync_GatewayNotConfigured_ReturnsNull()
+    {
+        var user = User.Create("a@b.c", "hash");
+        var sub = Subscription.StartTrial(UserId, 7);
+        _users.FindByIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(user);
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.CreateSubscriptionIntentAsync(UserId, "a@b.c", "monthly", IdempotencyKey, Arg.Any<CancellationToken>())
+            .Returns((SubscriptionIntentResult?)null);
+
+        var intent = await _billing.StartCheckoutAsync(UserId, "monthly", IdempotencyKey);
+
+        Assert.Null(intent);
+    }
+
+    [Fact]
+    public async Task StartCheckoutAsync_CompletedIdempotencyKey_ReplaysWithoutCallingGateway()
+    {
+        var record = IdempotencyRecord.Reserve(IdempotencyKey, IdempotencyRecord.Checkout, UserId);
+        record.CompleteCheckout("cus_123", "sub_456", "secret_abc", "incomplete");
+        _idempotencyKeys.FindAsync(IdempotencyKey, IdempotencyRecord.Checkout, Arg.Any<CancellationToken>())
+            .Returns(record);
+
+        var intent = await _billing.StartCheckoutAsync(UserId, "yearly", IdempotencyKey);
+
+        Assert.Equal("secret_abc", intent!.ClientSecret);
+        await _payments.DidNotReceive().CreateSubscriptionIntentAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartCheckoutAsync_InProgressIdempotencyKey_ThrowsConflict()
+    {
+        var record = IdempotencyRecord.Reserve(IdempotencyKey, IdempotencyRecord.Checkout, UserId);
+        _idempotencyKeys.FindAsync(IdempotencyKey, IdempotencyRecord.Checkout, Arg.Any<CancellationToken>())
+            .Returns(record);
+
+        await Assert.ThrowsAsync<IdempotencyConflictException>(
+            () => _billing.StartCheckoutAsync(UserId, "yearly", IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task StartCheckoutAsync_IdempotencyKeyUsedByAnotherUser_Throws()
+    {
+        var record = IdempotencyRecord.Reserve(IdempotencyKey, IdempotencyRecord.Checkout, Guid.NewGuid());
+        record.CompleteCheckout("cus_123", "sub_456", "secret_abc", "incomplete");
+        _idempotencyKeys.FindAsync(IdempotencyKey, IdempotencyRecord.Checkout, Arg.Any<CancellationToken>())
+            .Returns(record);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _billing.StartCheckoutAsync(UserId, "yearly", IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task StartPaymentMethodSetupAsync_AttachesCustomerId()
+    {
+        var user = User.Create("a@b.c", "hash");
+        var sub = Subscription.StartTrial(UserId, 7);
+        _users.FindByIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(user);
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.CreateSetupIntentAsync(UserId, "a@b.c", Arg.Any<CancellationToken>())
+            .Returns(new SetupIntentResult("stripe", "cus_123", "seti_secret_abc"));
+
+        var intent = await _billing.StartPaymentMethodSetupAsync(UserId);
+
+        Assert.Equal("seti_secret_abc", intent!.ClientSecret);
+        Assert.Equal("cus_123", sub.StripeCustomerId);
+    }
+
+    [Fact]
+    public async Task RefundAsync_NoSubscription_Throws()
+    {
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns((Subscription?)null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _billing.RefundAsync(UserId, null, IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task RefundAsync_NoStripeSubscriptionId_Throws()
     {
         var sub = Subscription.StartTrial(UserId, 7);
         _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
 
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _billing.RefundAsync(UserId, null, IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task RefundAsync_DelegatesToPaymentGateway()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.AttachProcessor("stripe", "cus_123", "sub_456");
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.RefundSubscriptionAsync("sub_456", 500, IdempotencyKey, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new RefundResult("re_1", "succeeded", 500));
+
+        var result = await _billing.RefundAsync(UserId, 500, IdempotencyKey);
+
+        Assert.Equal("re_1", result!.RefundId);
+        Assert.Equal(500, result.AmountCents);
+    }
+
+    [Fact]
+    public async Task RefundAsync_PassesSubscriptionsLastPaymentReferenceToGateway()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.AttachProcessor("stripe", "cus_123", "sub_456");
+        sub.RecordLastPaymentReference("psp_789");
+        _subscriptions.FindByUserIdAsync(UserId, Arg.Any<CancellationToken>()).Returns(sub);
+        _payments.RefundSubscriptionAsync("sub_456", 500, IdempotencyKey, "psp_789", Arg.Any<CancellationToken>())
+            .Returns(new RefundResult("re_1", "succeeded", 500));
+
+        var result = await _billing.RefundAsync(UserId, 500, IdempotencyKey);
+
+        Assert.Equal("re_1", result!.RefundId);
+    }
+
+    [Fact]
+    public async Task RefundAsync_CompletedIdempotencyKey_ReplaysWithoutCallingGateway()
+    {
+        var record = IdempotencyRecord.Reserve(IdempotencyKey, IdempotencyRecord.Refund, UserId);
+        record.CompleteRefund("re_1", "succeeded", 500);
+        _idempotencyKeys.FindAsync(IdempotencyKey, IdempotencyRecord.Refund, Arg.Any<CancellationToken>())
+            .Returns(record);
+
+        var result = await _billing.RefundAsync(UserId, 500, IdempotencyKey);
+
+        Assert.Equal("re_1", result!.RefundId);
+        await _payments.DidNotReceive().RefundSubscriptionAsync(
+            Arg.Any<string>(), Arg.Any<long?>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_PaymentMethodAttached_SetsDefaultOnGateway()
+    {
         var handled = await _billing.ApplyEventAsync(new PaymentEvent(
-            "checkout_completed", UserId.ToString(), "cus_123", "sub_456", "yearly", null, null));
+            "payment_method_attached", null, "cus_123", null, null, null, null, "pm_456"));
 
         Assert.True(handled);
-        Assert.Equal("active", sub.EffectiveStatus);
-        Assert.Equal("yearly", sub.Plan);
-        Assert.Equal("cus_123", sub.StripeCustomerId);
+        await _payments.Received(1).SetDefaultPaymentMethodAsync(
+            "cus_123", "pm_456", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_PaymentCaptured_RecordsLastPaymentReference()
+    {
+        var sub = Subscription.StartTrial(UserId, 7);
+        sub.AttachProcessor("adyen", "cus_123", "ref_456");
+        _subscriptions.FindByStripeCustomerIdAsync("cus_123", Arg.Any<CancellationToken>()).Returns(sub);
+
+        var handled = await _billing.ApplyEventAsync(new PaymentEvent(
+            "payment_captured", null, "cus_123", null, null, null, null,
+            Processor: "adyen", PaymentReference: "psp_789"));
+
+        Assert.True(handled);
+        Assert.Equal("psp_789", sub.LastPaymentReference);
+        await _subscriptions.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_PaymentCaptured_UnknownCustomer_ReturnsFalse()
+    {
+        _subscriptions.FindByStripeCustomerIdAsync("cus_unknown", Arg.Any<CancellationToken>())
+            .Returns((Subscription?)null);
+
+        var handled = await _billing.ApplyEventAsync(new PaymentEvent(
+            "payment_captured", null, "cus_unknown", null, null, null, null,
+            Processor: "adyen", PaymentReference: "psp_789"));
+
+        Assert.False(handled);
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_DuplicateEventId_SkipsReprocessingWithoutCallingGateway()
+    {
+        _processedWebhookEvents.ExistsAsync("evt_dup", Arg.Any<CancellationToken>()).Returns(true);
+
+        var handled = await _billing.ApplyEventAsync(new PaymentEvent(
+            "payment_method_attached", null, "cus_123", null, null, null, null, "pm_456", "evt_dup"));
+
+        Assert.True(handled);
+        await _payments.DidNotReceive().SetDefaultPaymentMethodAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _processedWebhookEvents.DidNotReceive().SaveAsync(Arg.Any<ProcessedWebhookEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApplyEventAsync_NewEventId_RecordsItAfterHandling()
+    {
+        var handled = await _billing.ApplyEventAsync(new PaymentEvent(
+            "payment_method_attached", null, "cus_123", null, null, null, null, "pm_456", "evt_new"));
+
+        Assert.True(handled);
+        await _processedWebhookEvents.Received(1).SaveAsync(
+            Arg.Is<ProcessedWebhookEvent>(e => e.EventId == "evt_new"), Arg.Any<CancellationToken>());
     }
 
     [Fact]

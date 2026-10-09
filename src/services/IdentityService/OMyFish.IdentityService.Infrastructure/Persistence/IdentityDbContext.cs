@@ -10,6 +10,8 @@ public class IdentityDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<ProcessedWebhookEvent> ProcessedWebhookEvents => Set<ProcessedWebhookEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,9 +59,39 @@ public class IdentityDbContext : DbContext
             s.Property(x => x.StripeCustomerId).HasColumnName("stripe_customer_id").HasMaxLength(255);
             s.HasIndex(x => x.StripeCustomerId);
             s.Property(x => x.StripeSubscriptionId).HasColumnName("stripe_subscription_id").HasMaxLength(255);
+            s.Property(x => x.PaymentProcessor).HasColumnName("payment_processor").HasMaxLength(20);
+            s.Property(x => x.LastPaymentReference).HasColumnName("last_payment_reference").HasMaxLength(255);
             s.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
             s.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
             s.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<IdempotencyRecord>(r =>
+        {
+            r.ToTable("idempotency_keys");
+            r.HasKey(x => x.Id);
+            r.Property(x => x.Id).HasColumnName("id");
+            r.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(255).IsRequired();
+            r.Property(x => x.Endpoint).HasColumnName("endpoint").HasMaxLength(20).IsRequired();
+            r.Property(x => x.UserId).HasColumnName("user_id");
+            r.Property(x => x.Completed).HasColumnName("completed").HasDefaultValue(false);
+            r.Property(x => x.CustomerId).HasColumnName("customer_id").HasMaxLength(255);
+            r.Property(x => x.SubscriptionId).HasColumnName("subscription_id").HasMaxLength(255);
+            r.Property(x => x.ClientSecret).HasColumnName("client_secret").HasMaxLength(255);
+            r.Property(x => x.CheckoutStatus).HasColumnName("checkout_status").HasMaxLength(50);
+            r.Property(x => x.RefundId).HasColumnName("refund_id").HasMaxLength(255);
+            r.Property(x => x.RefundStatus).HasColumnName("refund_status").HasMaxLength(50);
+            r.Property(x => x.AmountCents).HasColumnName("amount_cents");
+            r.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            r.HasIndex(x => new { x.IdempotencyKey, x.Endpoint }).IsUnique();
+        });
+
+        modelBuilder.Entity<ProcessedWebhookEvent>(e =>
+        {
+            e.ToTable("processed_webhook_events");
+            e.HasKey(x => x.EventId);
+            e.Property(x => x.EventId).HasColumnName("event_id").HasMaxLength(255);
+            e.Property(x => x.ProcessedAt).HasColumnName("processed_at").HasDefaultValueSql("NOW()");
         });
     }
 }
