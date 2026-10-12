@@ -274,6 +274,28 @@ POST /api/v1/users/{userId}/api-keys  → { keyId, plainKey, name }
 GET  /api/v1/auth/me
 ```
 
+### IdentityService — billing
+```
+GET  /api/v1/billing/me                     → { status, plan, trialEnd, currentPeriodEnd, paymentProcessor }
+POST /api/v1/billing/checkout               { plan } + Idempotency-Key header → { processor, clientSecret, subscriptionId, status }
+POST /api/v1/billing/portal-session         { returnUrl } → { url }   (Stripe only — PayPal/Adyen subscribers get a 503, no hosted portal equivalent)
+POST /api/v1/billing/payment-method/setup   → { processor, clientSecret, customerId }
+POST /api/v1/billing/webhook/{processor}    (Stripe/PayPal/Adyen webhook ingestion)
+
+GET  /api/v1/admin/stats
+GET  /api/v1/admin/subscriptions
+POST /api/v1/admin/subscriptions/{userId}/grant
+POST /api/v1/admin/subscriptions/{userId}/revoke
+POST /api/v1/admin/subscriptions/{userId}/refund
+POST /api/v1/admin/subscriptions/{userId}/extend-trial
+POST /api/v1/admin/subscriptions/reconcile
+```
+`status` includes `past_due`, set when a Stripe `invoice.payment_failed`
+webhook fires. Change-password (`POST /api/v1/auth/password` in
+omyfish-java) was deliberately not ported — BACKLOG item J scoped this
+port to payments only, since change-password is an account feature, not a
+payment one.
+
 ### NotificationService
 ```
 GET /api/v1/notifications              → current user's notifications, newest first
