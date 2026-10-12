@@ -1,5 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Text;
 using Adyen.Checkout.Extensions;
 using Adyen.Checkout.Services;
@@ -13,13 +11,14 @@ using Prometheus;
 using Scalar.AspNetCore;
 using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OMyFish.IdentityService.Api.Endpoints;
 using OMyFish.IdentityService.Application;
+using OMyFish.IdentityService.Application.Commands;
 using OMyFish.IdentityService.Application.Interfaces;
-using OMyFish.IdentityService.Domain.Entities;
 using OMyFish.IdentityService.Domain.Interfaces;
+using OMyFish.IdentityService.Infrastructure.Auth;
 using OMyFish.IdentityService.Infrastructure.Payments;
 using OMyFish.IdentityService.Infrastructure.Persistence;
 using OMyFish.IdentityService.Infrastructure.Repositories;
@@ -38,6 +37,10 @@ builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
 builder.Services.AddScoped<IApiKeyRepository, ApiKeyRepository>();
 builder.Services.AddScoped<IIdempotencyKeyRepository, IdempotencyKeyRepository>();
 builder.Services.AddScoped<IProcessedWebhookEventRepository, ProcessedWebhookEventRepository>();
+
+// ── CQRS ──────────────────────────────────────────────────────────────────────
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
 
 // ── Payment processors (test keys) — billing endpoints return 503 until configured ────────
 builder.Services.AddSingleton(sp => new StripePaymentGateway(
@@ -118,22 +121,7 @@ if (builder.Environment.IsProduction() && (jwtSecret is null || jwtSecret.Starts
     throw new InvalidOperationException("Jwt__Secret must be set to a non-default value in production.");
 jwtSecret ??= "dev-secret-change-in-production-min-32-chars";
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
-
-// Refresh token lives only in an httpOnly cookie now, never in the response body/localStorage
-// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3). Secure requires HTTPS, so it's off outside
-// Production to keep local/docker-compose dev (plain HTTP) working.
-const string RefreshCookieName = "refresh_token";
-var cookieSecure = builder.Environment.IsProduction();
-
-void SetRefreshCookie(HttpContext ctx, string token) =>
-    ctx.Response.Cookies.Append(RefreshCookieName, token, new CookieOptions
-    {
-        HttpOnly = true,
-        Secure = cookieSecure,
-        SameSite = SameSiteMode.Strict,
-        Expires = DateTimeOffset.UtcNow.AddDays(30),
-        Path = "/api/v1/auth",
-    });
+builder.Services.AddSingleton<ITokenService>(_ => new JwtTokenService(signingKey));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
@@ -205,343 +193,11 @@ app.MapMetrics("/metrics");
 app.MapOpenApi();
 app.MapScalarApiReference();
 
-app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IUserRepository repo, ISubscriptionRepository subs) =>
-{
-    if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
-        return Results.BadRequest(new { error = "Email and password are required." });
-
-    if (await repo.FindByEmailAsync(req.Email) is not null)
-        return Results.Conflict(new { error = "Email already registered." });
-
-    var hashed = BCrypt.Net.BCrypt.HashPassword(req.Password);
-    var user = User.Create(req.Email, hashed, req.DisplayName);
-    await repo.CreateAsync(user);
-    await subs.CreateAsync(Subscription.StartTrial(user.Id));
-
-    return Results.Created($"/api/v1/auth/me",
-        new UserDto(user.Id, user.Email, user.DisplayName, user.Role));
-});
-
-app.MapPost("/api/v1/auth/login", async (LoginRequest req, HttpContext ctx, IUserRepository repo) =>
-{
-    var user = await repo.FindByEmailAsync(req.Email);
-    if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.HashedPassword))
-        return Results.Unauthorized();
-    if (!user.IsActive)
-        return Results.Forbid();
-
-    var accessToken = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
-    SetRefreshCookie(ctx, CreateRefreshJwt(user, signingKey));
-    return Results.Ok(new TokenResponse(accessToken, user.Id, user.Email, user.Role));
-});
-
-// Refresh token now travels only as an httpOnly cookie, never in the JSON body/localStorage
-// — a stolen 30-day token via XSS was a long-lived account takeover
-// (BACKLOG.md item F, WEAKNESS_AUDIT.md §1.3).
-app.MapPost("/api/v1/auth/refresh", async (HttpContext ctx, IUserRepository repo) =>
-{
-    if (!ctx.Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken) || refreshToken is null)
-        return Results.Unauthorized();
-
-    var handler = new JwtSecurityTokenHandler();
-    ClaimsPrincipal principal;
-    try
-    {
-        principal = handler.ValidateToken(refreshToken, new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = signingKey,
-            ValidateIssuer = false,
-            ValidateAudience = false,
-            ValidateLifetime = true,
-        }, out _);
-    }
-    catch { return Results.Unauthorized(); }
-
-    var typeClaim = principal.FindFirstValue("token_type");
-    if (typeClaim != "refresh") return Results.Unauthorized();
-
-    var idStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (!Guid.TryParse(idStr, out var userId)) return Results.Unauthorized();
-
-    var user = await repo.FindByIdAsync(userId);
-    if (user is null || !user.IsActive) return Results.Unauthorized();
-
-    var accessToken = CreateJwt(user, signingKey, TimeSpan.FromDays(1));
-    SetRefreshCookie(ctx, CreateRefreshJwt(user, signingKey));
-    return Results.Ok(new TokenResponse(accessToken, user.Id, user.Email, user.Role));
-});
-
-app.MapPost("/api/v1/auth/logout", (HttpContext ctx) =>
-{
-    ctx.Response.Cookies.Delete(RefreshCookieName);
-    return Results.Ok();
-});
-
-app.MapGet("/api/v1/auth/me", async (ClaimsPrincipal principal, IUserRepository repo) =>
-{
-    var idStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (!Guid.TryParse(idStr, out var id)) return Results.Unauthorized();
-    var user = await repo.FindByIdAsync(id);
-    return user is null ? Results.NotFound() :
-        Results.Ok(new UserDto(user.Id, user.Email, user.DisplayName, user.Role));
-}).RequireAuthorization();
-
-app.MapPost("/api/v1/users/{userId:guid}/api-keys", async (
-    Guid userId, ApiKeyRequest req, IUserRepository users, IApiKeyRepository apiKeys) =>
-{
-    if (await users.FindByIdAsync(userId) is null) return Results.NotFound();
-
-    var raw = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
-    var plainKey = "omf_" + Convert.ToBase64String(raw).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    var keyHash = BCrypt.Net.BCrypt.HashPassword(plainKey);
-
-    var apiKey = ApiKey.Create(userId, keyHash, req.Name);
-    await apiKeys.CreateAsync(apiKey);
-
-    return Results.Created($"/api/v1/users/{userId}/api-keys/{apiKey.Id}",
-        new ApiKeyResponse(apiKey.Id, plainKey, apiKey.Name));
-}).RequireAuthorization();
-
-// ── Billing ───────────────────────────────────────────────────────────────────
-
-app.MapGet("/api/v1/billing/me", async (ClaimsPrincipal principal, BillingService billing) =>
-{
-    if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
-        return Results.Unauthorized();
-    var sub = await billing.MySubscriptionAsync(userId);
-    return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
-}).RequireAuthorization();
-
-app.MapPost("/api/v1/billing/checkout", async (
-    CheckoutRequest req, ClaimsPrincipal principal, BillingService billing,
-    [FromHeader(Name = "Idempotency-Key")] string idempotencyKey) =>
-{
-    if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
-        return Results.Unauthorized();
-    try
-    {
-        var intent = await billing.StartCheckoutAsync(userId, req.Plan, idempotencyKey);
-        return intent is null
-            ? Results.Problem("No payment processor is configured.", statusCode: 503)
-            : Results.Ok(new CheckoutResponse(
-                intent.Processor, intent.ClientSecret, intent.SubscriptionId, intent.Status));
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-    catch (InvalidOperationException)
-    {
-        return Results.NotFound();
-    }
-    catch (IdempotencyConflictException ex)
-    {
-        return Results.Conflict(new { error = ex.Message });
-    }
-    catch (AlreadySubscribedException ex)
-    {
-        return Results.Conflict(new { error = ex.Message });
-    }
-}).RequireAuthorization();
-
-app.MapPost("/api/v1/billing/payment-method/setup", async (
-    ClaimsPrincipal principal, BillingService billing) =>
-{
-    if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
-        return Results.Unauthorized();
-    var intent = await billing.StartPaymentMethodSetupAsync(userId);
-    return intent is null
-        ? Results.Problem("No payment processor is configured.", statusCode: 503)
-        : Results.Ok(new SetupIntentResponse(intent.Processor, intent.CustomerId, intent.ClientSecret));
-}).RequireAuthorization();
-
-app.MapPost("/api/v1/billing/portal-session", async (
-    PortalSessionRequest req, ClaimsPrincipal principal, BillingService billing) =>
-{
-    if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
-        return Results.Unauthorized();
-    try
-    {
-        var url = await billing.CreatePortalSessionAsync(userId, req.ReturnUrl);
-        return url is null
-            ? Results.Problem("No self-service portal is available for this payment processor.", statusCode: 503)
-            : Results.Ok(new PortalSessionResponse(url));
-    }
-    catch (InvalidOperationException)
-    {
-        return Results.NotFound();
-    }
-}).RequireAuthorization();
-
-app.MapPost("/api/v1/billing/webhook/{processor}", async (
-    string processor, HttpRequest request, PaymentProcessorRegistry processors, BillingService billing) =>
-{
-    if (!processors.Exists(processor))
-        return Results.NotFound(new { error = $"Unknown payment processor: {processor}" });
-
-    IPaymentGateway gateway;
-    try
-    {
-        gateway = processors.ByName(processor);
-    }
-    catch (InvalidOperationException)
-    {
-        return Results.Problem($"Payment processor is not configured: {processor}", statusCode: 503);
-    }
-
-    var headers = request.Headers.ToDictionary(h => h.Key.ToLowerInvariant(), h => h.Value.ToString());
-    var payload = await new StreamReader(request.Body).ReadToEndAsync();
-    var evt = await gateway.VerifyWebhookAsync(payload, headers);
-    if (evt is null)
-        return Results.BadRequest(new { error = "Invalid webhook signature" });
-
-    var handled = await billing.ApplyEventAsync(evt);
-    return Results.Ok(new { handled });
-});
-
-// ── Admin ─────────────────────────────────────────────────────────────────────
-
-app.MapGet("/api/v1/admin/stats", async (BillingService billing) =>
-{
-    var stats = await billing.StatsAsync();
-    return Results.Ok(new
-    {
-        users = stats.Users,
-        subscriptions = new
-        {
-            trialing = stats.Trialing,
-            active = stats.Active,
-            canceled = stats.Canceled,
-            expired = stats.Expired,
-        },
-        activePlans = new { monthly = stats.ActiveMonthly, yearly = stats.ActiveYearly },
-        mrrCad = stats.MrrCad,
-    });
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
-
-app.MapGet("/api/v1/admin/subscriptions", async (BillingService billing) =>
-{
-    var all = await billing.AllSubscriptionsAsync();
-    var emails = await billing.UserEmailsAsync();
-    return Results.Ok(all.Select(s => new
-    {
-        s.UserId,
-        Email = emails.GetValueOrDefault(s.UserId, "?"),
-        Status = s.EffectiveStatus,
-        s.Plan,
-        s.TrialEnd,
-        s.CurrentPeriodEnd,
-        s.PaymentProcessor,
-    }));
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
-
-app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/grant", async (
-    Guid userId, GrantRequest? req, BillingService billing) =>
-{
-    var sub = await billing.GrantAsync(userId, req?.Plan ?? "yearly", req?.Days ?? 365);
-    return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
-
-app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/revoke", async (
-    Guid userId, BillingService billing) =>
-{
-    var sub = await billing.RevokeAsync(userId);
-    if (sub is null) return Results.NotFound();
-    return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
-
-app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/extend-trial", async (
-    Guid userId, GrantRequest? req, BillingService billing) =>
-{
-    var sub = await billing.ExtendTrialAsync(userId, req?.Days ?? 7);
-    return Results.Ok(new SubscriptionDto(
-        sub.EffectiveStatus, sub.Plan, sub.TrialEnd, sub.CurrentPeriodEnd, sub.PaymentProcessor));
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
-
-app.MapPost("/api/v1/admin/subscriptions/{userId:guid}/refund", async (
-    Guid userId, RefundRequest? req, BillingService billing,
-    [FromHeader(Name = "Idempotency-Key")] string idempotencyKey) =>
-{
-    try
-    {
-        var result = await billing.RefundAsync(userId, req?.AmountCents, idempotencyKey);
-        return result is null
-            ? Results.Problem("Payment processor is not configured or there is nothing to refund.", statusCode: 503)
-            : Results.Ok(new { refundId = result.RefundId, status = result.Status, amountCents = result.AmountCents });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.Problem(ex.Message, statusCode: 404);
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.Problem(ex.Message, statusCode: 404);
-    }
-    catch (IdempotencyConflictException ex)
-    {
-        return Results.Conflict(new { error = ex.Message });
-    }
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
-
-app.MapPost("/api/v1/admin/subscriptions/reconcile", async (
-    long? lookbackHours, ReconciliationService reconciliation) =>
-{
-    var result = await reconciliation.ReconcileAsync(DateTime.UtcNow.AddHours(-(lookbackHours ?? 24)));
-    return Results.Ok(result);
-}).RequireAuthorization(policy => policy.RequireRole("ADMIN"));
+app.MapAuthEndpoints();
+app.MapBillingEndpoints();
+app.MapAdminEndpoints();
 
 app.Run();
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-static string CreateJwt(User user, SymmetricSecurityKey key, TimeSpan lifetime)
-{
-    var claims = new[]
-    {
-        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-        new Claim(ClaimTypes.Email, user.Email),
-        new Claim(ClaimTypes.Role, user.Role),
-        new Claim("token_type", "access"),
-    };
-    var token = new JwtSecurityToken(
-        claims: claims,
-        expires: DateTime.UtcNow.Add(lifetime),
-        signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
-    return new JwtSecurityTokenHandler().WriteToken(token);
-}
-
-static string CreateRefreshJwt(User user, SymmetricSecurityKey key)
-{
-    var claims = new[]
-    {
-        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-        new Claim("token_type", "refresh"),
-    };
-    var token = new JwtSecurityToken(
-        claims: claims,
-        expires: DateTime.UtcNow.AddDays(30),
-        signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
-    return new JwtSecurityTokenHandler().WriteToken(token);
-}
-
-// ── Request/Response records ──────────────────────────────────────────────────
-record RegisterRequest(string Email, string Password, string? DisplayName);
-record CheckoutRequest(string Plan);
-record CheckoutResponse(string Processor, string? ClientSecret, string SubscriptionId, string Status);
-record SetupIntentResponse(string Processor, string CustomerId, string ClientSecret);
-record PortalSessionRequest(string ReturnUrl);
-record PortalSessionResponse(string Url);
-record RefundRequest(long? AmountCents);
-record GrantRequest(int? Days, string? Plan);
-record SubscriptionDto(string Status, string? Plan, DateTime? TrialEnd, DateTime? CurrentPeriodEnd, string? PaymentProcessor);
-record LoginRequest(string Email, string Password);
-record TokenResponse(string Token, Guid UserId, string Email, string Role);
-record UserDto(Guid Id, string Email, string? DisplayName, string Role);
-record ApiKeyRequest(string Name);
-record ApiKeyResponse(Guid KeyId, string PlainKey, string Name);
 
 // Logs and turns any exception the endpoints/middleware don't already handle into a clean
 // JSON 5xx response, instead of ASP.NET Core's default unhandled-exception behavior

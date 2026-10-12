@@ -5,6 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MediatR" Version="12.4.1" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OMyFish.IdentityService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\OMyFish.IdentityService.Domain\OMyFish.IdentityService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.BuildingBlocks\OMyFish.Shared.BuildingBlocks.csproj" />
   </ItemGroup>
 </Project>
