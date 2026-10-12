@@ -961,3 +961,62 @@ cases: active-subscriber guard fires without calling the gateway,
 past_due-subscriber guard fires too, trialing-with-no-processor is
 unaffected). All four payment-module-parity items (H, I, J, K) are now
 done.
+
+---
+
+## [x] L — Stripe webhook silently rejected when event `api_version` doesn't match the SDK's
+
+**Status:** DONE (2026-10-12). Port of `omyfish-java`'s item L — found there
+debugging "I canceled via the billing portal but the account page still
+shows it active," root-caused to `stripe-java`'s `getObject()` returning an
+empty `Optional` when the event's `api_version` doesn't match the SDK's
+compiled version, with the `sub == null` branch swallowing it with no
+logging.
+
+Checked first whether `Stripe.net` even has the same failure mode, since its
+event deserialization isn't built the same way as `stripe-java`'s — it
+isn't. `Stripe.net` doesn't have a safe/unsafe split; instead
+`EventUtility.ConstructEvent` **throws** a `StripeException` by default
+(`throwOnApiVersionMismatch: true`) on a mismatch, naming both versions in
+the message. `StripePaymentGateway.VerifyWebhookAsync`'s `catch { return
+null; }` around that call was swallowing the exception exactly like Java's
+`sub == null` branch swallowed the empty `Optional` — same end-user symptom
+(webhook silently dropped, portal cancellation never reflected locally),
+different mechanism. Confirmed empirically before fixing (not just inferred
+from docs): a small harness built a validly-signed webhook payload with
+`api_version: "2019-02-19"` against the installed `Stripe.net 52.1.1`
+(pinned to `2026-06-24.dahlia`) — the default call threw
+`StripeException: Received event with API version 2019-02-19, but
+Stripe.net 52.1.1 expects API version 2026-06-24.dahlia...`, confirming the
+bug; passing `throwOnApiVersionMismatch: false` deserialized the same
+payload cleanly, `Data.Object` cast fine to `Subscription` with all fields
+intact.
+
+Fix: `VerifyWebhookAsync` now passes `throwOnApiVersionMismatch: false` to
+`ConstructEvent` — Stripe's own documented workaround, equivalent to Java's
+`deserializeUnsafe()` fallback. Unlike Java's fix, this needed no per-branch
+helper (`setup_intent.succeeded`/`invoice.payment_failed` go through the
+same single `ConstructEvent` call, not three separate `getObject()` calls),
+so the fix is a one-line flag plus a WARN (naming BACKLOG item L) logged
+when `stripeEvent.ApiVersion` differs from `Stripe.StripeConfiguration
+.ApiVersion`. `StripePaymentGateway` had no logger before this — added
+`ILogger<StripePaymentGateway>` via constructor injection (this codebase's
+existing pattern, e.g. `FishIdentifiedConsumer`), wired in `Program.cs`'s
+registration.
+
+**Checked but not ported:** `omyfish-python-web`'s `stripe-python` doesn't
+have this bug at all, not even in a different shape — `event.data.object`
+is an `UntypedStripeObject`, dynamically built from whatever JSON fields
+are present with no generated per-version model classes and no
+`api_version` gate on `construct_event` or on reading `.data.object`.
+Confirmed by reading `stripe/_event.py` and `stripe/_webhook.py` in the
+installed `stripe` 16.0.0: no `api_version`/`throwOnApiVersionMismatch`-
+equivalent parameter anywhere in that path. Documented as an audit, not
+fixed, in that repo's own BACKLOG (item L there).
+
+Verified: `dotnet build omyfish-dotnet.slnx` clean. `dotnet test
+omyfish-dotnet.slnx` — **131/131 green** (1 new
+`StripePaymentGatewayTest.VerifyWebhookAsync_SubscriptionUpdated
+_WithMismatchedApiVersion_StillMapsEvent` — the first gateway-level test for
+any payment processor in this repo, following Java's port in building a
+real signed webhook payload rather than mocking the SDK).

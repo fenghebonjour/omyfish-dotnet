@@ -40,14 +40,15 @@ builder.Services.AddScoped<IIdempotencyKeyRepository, IdempotencyKeyRepository>(
 builder.Services.AddScoped<IProcessedWebhookEventRepository, ProcessedWebhookEventRepository>();
 
 // ── Payment processors (test keys) — billing endpoints return 503 until configured ────────
-builder.Services.AddSingleton(_ => new StripePaymentGateway(
+builder.Services.AddSingleton(sp => new StripePaymentGateway(
     secretKey: builder.Configuration["Stripe__SecretKey"] ?? "",
     webhookSecret: builder.Configuration["Stripe__WebhookSecret"] ?? "",
     prices: new Dictionary<string, string>
     {
         ["monthly"] = builder.Configuration["Stripe__PriceMonthly"] ?? "",  // 5 CAD/month
         ["yearly"] = builder.Configuration["Stripe__PriceYearly"] ?? "",    // 29 CAD/year
-    }));
+    },
+    logger: sp.GetRequiredService<ILogger<StripePaymentGateway>>()));
 builder.Services.AddHttpClient("paypal", client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["PayPal__BaseUrl"] ?? "https://api-m.sandbox.paypal.com");

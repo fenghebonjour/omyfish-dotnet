@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using OMyFish.IdentityService.Application.Interfaces;
 
 namespace OMyFish.IdentityService.Infrastructure.Payments;
@@ -7,13 +8,16 @@ public class StripePaymentGateway : IPaymentGateway
     private readonly string _secretKey;
     private readonly string _webhookSecret;
     private readonly IReadOnlyDictionary<string, string> _prices;
+    private readonly ILogger<StripePaymentGateway> _logger;
 
     public StripePaymentGateway(
-        string secretKey, string webhookSecret, IReadOnlyDictionary<string, string> prices)
+        string secretKey, string webhookSecret, IReadOnlyDictionary<string, string> prices,
+        ILogger<StripePaymentGateway> logger)
     {
         _secretKey = secretKey;
         _webhookSecret = webhookSecret;
         _prices = prices;
+        _logger = logger;
     }
 
     public string Name => "stripe";
@@ -112,11 +116,27 @@ public class StripePaymentGateway : IPaymentGateway
         Stripe.Event stripeEvent;
         try
         {
-            stripeEvent = Stripe.EventUtility.ConstructEvent(payload, signature, _webhookSecret);
+            // Stripe.net's default (throwOnApiVersionMismatch: true) throws when the event's
+            // api_version doesn't match the version Stripe.net was compiled for — common in a
+            // sandbox whose account api_version trails the library — and the catch below was
+            // swallowing that as a silent drop (BACKLOG item L, ported from omyfish-java, where
+            // stripe-java hits the same root cause by returning an empty Optional instead of
+            // throwing). false skips that check; Stripe's own documented workaround.
+            stripeEvent = Stripe.EventUtility.ConstructEvent(
+                payload, signature, _webhookSecret, throwOnApiVersionMismatch: false);
         }
         catch
         {
             return Task.FromResult<PaymentEvent?>(null);
+        }
+
+        if (stripeEvent.ApiVersion != Stripe.StripeConfiguration.ApiVersion)
+        {
+            _logger.LogWarning(
+                "Stripe webhook {EventId} ({EventType}): event api_version {EventApiVersion} does "
+                + "not match Stripe.net's compiled version {SdkApiVersion} (BACKLOG item L); "
+                + "deserialized with throwOnApiVersionMismatch: false",
+                stripeEvent.Id, stripeEvent.Type, stripeEvent.ApiVersion, Stripe.StripeConfiguration.ApiVersion);
         }
 
         PaymentEvent? result = stripeEvent.Type switch
