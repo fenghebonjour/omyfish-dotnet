@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="dbup-postgresql" Version="7.0.1" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
+    <!-- Pin above the transitive 2.0.0 pulled in by AspNetCore.OpenApi — that version has a
+         known stack-overflow-on-circular-schema advisory (GHSA-v5pm-xwqc-g5wc), fixed in 2.7.5+. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.17.2" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.9.0" />
+    <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OMyFish.ShopService.Application\OMyFish.ShopService.Application.csproj" />
+    <ProjectReference Include="..\OMyFish.ShopService.Infrastructure\OMyFish.ShopService.Infrastructure.csproj" />
+  </ItemGroup>
+  <!-- Embedded so the container doesn't depend on migrations/ being present on disk at
+       runtime — applied on startup via DbUp. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\..\migrations\ShopService\*.sql" LogicalName="Migrations.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

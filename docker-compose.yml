@@ -214,6 +214,25 @@ services:
       rabbitmq: { condition: service_healthy }
     networks: [omyfish-net]
 
+  shop-service:
+    build:
+      context: .
+      dockerfile: src/services/ShopService/OMyFish.ShopService.Api/Dockerfile
+    ports:
+      - "8085:8080"
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Database=omyfish;Username=omyfish;Password=omyfish_dev"
+      ASPNETCORE_ENVIRONMENT: Development
+      Jwt__Secret: "dev-secret-change-in-production-min-32-chars"
+      MinIO__Endpoint: "minio:9000"
+      MinIO__AccessKey: omyfish
+      MinIO__SecretKey: omyfish_dev
+      MinIO__Bucket: product-images
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [omyfish-net]
+
   notification-service:
     build:
       context: .
@@ -251,6 +270,7 @@ services:
       species-service: { condition: service_healthy }
       observation-service: { condition: service_healthy }
       notification-service: { condition: service_healthy }
+      shop-service: { condition: service_healthy }
     networks: [omyfish-net]
 
   # ─── Frontend ─────────────────────────────────────────────────────────────
@@ -261,7 +281,7 @@ services:
   # is baked in at that repo's build time (defaults to :8080, matching every
   # backend's gateway port), not settable here at runtime.
   frontend:
-    image: ghcr.io/fenghebonjour/omyfish-frontend:c95f634
+    image: ghcr.io/fenghebonjour/omyfish-frontend:54d4c7a
     ports:
       - "3000:3000"
     environment:

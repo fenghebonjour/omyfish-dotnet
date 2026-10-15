@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MediatR" Version="12.4.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OMyFish.ShopService.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OMyFish.ShopService.Domain\OMyFish.ShopService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.BuildingBlocks\OMyFish.Shared.BuildingBlocks.csproj" />
+  </ItemGroup>
+</Project>

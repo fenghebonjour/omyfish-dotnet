@@ -41,6 +41,8 @@ public class GatewayAuthorizationTests : IClassFixture<WebApplicationFactory<Pro
     [InlineData("/api/v1/notifications/")]
     [InlineData("/api/v1/billing/whatever")]
     [InlineData("/api/v1/admin/whatever")]
+    [InlineData("/api/v1/shop/orders")]
+    [InlineData("/api/v1/shop/admin/products/x/image")]
     public async Task ProtectedRoute_WithoutToken_Returns401(string path)
     {
         var client = _factory.CreateClient();
@@ -53,6 +55,7 @@ public class GatewayAuthorizationTests : IClassFixture<WebApplicationFactory<Pro
     [Theory]
     [InlineData("/api/v1/observations/mine")]
     [InlineData("/api/v1/notifications/")]
+    [InlineData("/api/v1/shop/orders")]
     public async Task ProtectedRoute_WithValidToken_IsNotRejectedByAuth(string path)
     {
         var client = _factory.CreateClient();
@@ -70,6 +73,11 @@ public class GatewayAuthorizationTests : IClassFixture<WebApplicationFactory<Pro
     [InlineData("/api/v1/auth/login")]
     [InlineData("/api/v1/species/identify")]
     [InlineData("/api/v1/billing/webhook/stripe")]
+    [InlineData("/api/v1/shop/products")]
+    [InlineData("/api/v1/shop/cart")]
+    [InlineData("/api/v1/shop/checkout")]
+    [InlineData("/api/v1/shop/webhook/stripe")]
+    [InlineData("/api/v1/shop/orders/lookup")]
     public async Task AnonymousPolicyRoute_WithoutToken_IsNotRejectedByAuth(string path)
     {
         var client = _factory.CreateClient();

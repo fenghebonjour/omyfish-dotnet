@@ -58,6 +58,7 @@ omyfish-dotnet/
       SpeciesService/          ← AI orchestration, CQRS, species KB
       ObservationService/      ← PostGIS, EXIF, GeoJSON, MinIO
       NotificationService/     ← notifications web API + MassTransit consumers
+      ShopService/             ← Omyshop: catalog, cart, Stripe checkout, orders
       AIService/               ← builds from ../omyfish-ai (shared: Bite Score + fish ID + Regs & Tips chatbot)
     shared/
       OMyFish.Shared.BuildingBlocks/   ← CQRS interfaces, AggregateRoot
@@ -74,7 +75,9 @@ omyfish-dotnet/
 **Frontend:** not vendored here — extracted to its own repo/image, shared across every
 omyfish-* backend: https://github.com/fenghebonjour/omyfish-frontend (Next.js 15, /, /timing,
 /observations, /notifications, /login, /register). `docker-compose.yml`'s `frontend` service
-pulls a pinned tag; develop the frontend itself by cloning that repo directly.
+pulls a pinned tag; develop the frontend itself by cloning that repo directly. `make up`/
+`build-up` warn (without blocking) if that pin is behind a sibling `../omyfish-frontend`
+checkout — bump the tag to pick up frontend changes.
 
 ## Architecture
 
@@ -90,6 +93,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for full diagrams, DDD bounded contexts, 
 | Species Service      | 8082 |
 | Observation Service  | 8083 |
 | Notification Service | 8084 |
+| Shop Service         | 8085 |
 | AI Service (Python)  | 8000 |
 | PostgreSQL           | 5432 |
 | MongoDB              | 27017|

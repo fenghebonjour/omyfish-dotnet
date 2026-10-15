@@ -60,6 +60,7 @@ src/
       OMyFish.SpeciesService.Domain/        Species, Prediction, ConfidenceScore
       OMyFish.SpeciesService.Infrastructure/ MongoDB.Driver (species catalog), EF Core (predictions), AI client, MassTransit
     ObservationService/                     (same 4-project Clean Architecture)
+    ShopService/                             (same 4-project Clean Architecture — no MassTransit/outbox, publishes no events)
     NotificationService/OMyFish.NotificationService/  Web API (notifications read/mark-read) + MassTransit consumers
 infrastructure/kubernetes/                  K8s manifests
 infrastructure/helm/omyfish/                Helm chart
@@ -144,6 +145,46 @@ Both use MediatR. Register handlers with `services.AddMediatR(...)`.
   004_add_outbox.sql` since both services share one physical Postgres database (same reason
   DbUp's journal table is `schemaversions_<service>`, not shared).
 
+## Shop Service (Omyshop)
+
+Product catalog, cart, checkout, and order management, under `/api/v1/shop/**`. Unlike the
+other services, downstream identity isn't forwarded via gateway-set headers: cart/checkout
+endpoints have no `RequireAuthorization()` (anonymous-allowed at the gateway too, via
+`AuthorizationPolicy: Anonymous` on their YARP routes), but ASP.NET Core's JWT Bearer
+middleware still validates any `Authorization` header that *is* present, so
+`ShopOwnerResolver` can read the `sub` claim when logged in or fall back to an `X-Cart-Token`
+header (a client-generated guest cart identifier — not security-sensitive, just an id) when
+not. Admin-only endpoints (`admin/products/{id}/image`, `orders/admin`,
+`orders/{id}/returns/approve`) use `.RequireAuthorization(policy => policy.RequireRole("ADMIN"))`,
+same idiom as `IdentityService.AdminEndpoints`.
+
+- `OMyFish.ShopService.Domain`: `Product`, `Cart`, `Order` (`OrderStatus`: `PendingPayment`,
+  `Paid`, `Cancelled`, `ReturnRequested`, `Returned`); `Cart.Items`/`Order.Lines` are
+  `IReadOnlyList<T>` navigations backed by a private field — EF Core's documented
+  "backing field" convention maps straight to them in `ShopDbContext`, no separate
+  persistence-entity class needed.
+- Checkout is Stripe Checkout Sessions (`OMyFish.ShopService.Infrastructure/Payments/StripeCheckoutGateway.cs`,
+  `IPaymentGateway` — deliberately separate from `IdentityService`'s subscription-shaped
+  `IPaymentGateway`). `CheckoutCommandHandler` reserves stock + creates the order in its own
+  `SaveChangesAsync` *before* calling Stripe, so the HTTP round-trip never holds a DB
+  transaction open; a Stripe failure compensates via `CancelOrderCommand` (restock +
+  cancel) rather than a rollback. `/webhook/stripe` confirms payment the same way identity's
+  billing webhook does, including the `EventUtility.ConstructEvent(...,
+  throwOnApiVersionMismatch: false)` fix for Stripe.net's api_version-mismatch gotcha
+  (BACKLOG item L).
+- Product photos: admin-only upload (`AdminProductEndpoints`), served back through the
+  service's own `/image` endpoint rather than a raw MinIO URL — unlike
+  `ObservationService.MinIOStorageService.GetPublicUrl`, which does expose MinIO directly.
+  The `001_initial_shop_schema.sql` seed's 10 products start with an inline `data:` URI
+  placeholder (never hits MinIO) until an admin upload replaces it. In this repo's own dev
+  stack all 10 already have a real photo (CC0/CC-BY/CC-BY-SA, sourced for `omyfish-java`'s
+  shop-service and re-uploaded here via the same admin endpoint) — that's live MinIO/Postgres
+  state, not part of any migration, so it's lost on `docker compose down -v` and has to be
+  redone the same way (see `omyfish-java`'s shop-service for the same situation).
+- Postgres, own `shop` schema (`shop.products`, `shop.carts`/`cart_items`,
+  `shop.orders`/`order_lines`), same `schemaversions_shop` DbUp journal convention as every
+  other service.
+
 ## AI Service
 
 Python service (built from `../omyfish-ai` — see docker-compose.yml) called via `IAIServiceClient` (typed HttpClient).
@@ -163,6 +204,8 @@ ai-service also exposes the Quebec Regs Advisor (`/regs/*` — limits, consumpti
 - `Npgsql.EntityFrameworkCore.PostgreSQL` (EF Core driver)
 - `NetTopologySuite` (spatial types for PostGIS)
 - `MongoDB.Driver` (species-service's species catalog only — see Database above)
+- `Stripe.net` (identity-service's subscription billing and shop-service's one-time checkout)
+- `Minio` (object storage — observation-service's photos, shop-service's product images)
 - `Yarp.ReverseProxy` (API Gateway)
 - `OpenTelemetry.Extensions.Hosting` (traces)
 - `prometheus-net.AspNetCore` (metrics)
@@ -170,7 +213,7 @@ ai-service also exposes the Quebec Regs Advisor (`/regs/*` — limits, consumpti
 
 ## Testing
 
-Test projects live in `tests/` (`OMyFish.ApiGateway.Tests`, `OMyFish.IdentityService.Tests`, `OMyFish.NotificationService.Tests`, `OMyFish.ObservationService.Tests`, `OMyFish.SpeciesService.Tests`) — run with `make test`.
+Test projects live in `tests/` (`OMyFish.ApiGateway.Tests`, `OMyFish.IdentityService.Tests`, `OMyFish.NotificationService.Tests`, `OMyFish.ObservationService.Tests`, `OMyFish.ShopService.Tests`, `OMyFish.SpeciesService.Tests`) — run with `make test`.
 
 - Unit: xUnit, NSubstitute (or Moq) — no infrastructure deps
 - Repository-level integration: `Testcontainers.PostgreSql` on the same

@@ -9,6 +9,13 @@ up:
 	if [ -n "$$HOLDER" ]; then \
 		echo "warning: port 3000 is already in use by another process on the host ($$HOLDER) — the frontend container may start but be unreachable; stop that process first (e.g. a local 'npm run dev')"; \
 	fi
+	@FRONTEND_PIN=$$(grep -oE 'omyfish-frontend:[a-f0-9]+' docker-compose.yml | head -1 | cut -d: -f2); \
+	if [ -d ../omyfish-frontend/.git ]; then \
+		FRONTEND_HEAD=$$(git -C ../omyfish-frontend rev-parse --short HEAD 2>/dev/null); \
+		if [ -n "$$FRONTEND_HEAD" ] && [ -n "$$FRONTEND_PIN" ] && [ "$$FRONTEND_PIN" != "$$FRONTEND_HEAD" ]; then \
+			echo "warning: docker-compose.yml pins frontend image tag $$FRONTEND_PIN, but ../omyfish-frontend is at $$FRONTEND_HEAD — bump the pin (see README) to pick up frontend changes"; \
+		fi; \
+	fi
 	@if curl -sf http://localhost:8000/health >/dev/null 2>&1; then \
 		docker compose up -d; \
 	else \
@@ -25,6 +32,13 @@ build-up:
 	@HOLDER=$$(ss -ltnp 2>/dev/null | awk '$$4 ~ /:3000$$/ && /users:/ && $$0 !~ /docker-proxy/'); \
 	if [ -n "$$HOLDER" ]; then \
 		echo "warning: port 3000 is already in use by another process on the host ($$HOLDER) — the frontend container may start but be unreachable; stop that process first (e.g. a local 'npm run dev')"; \
+	fi
+	@FRONTEND_PIN=$$(grep -oE 'omyfish-frontend:[a-f0-9]+' docker-compose.yml | head -1 | cut -d: -f2); \
+	if [ -d ../omyfish-frontend/.git ]; then \
+		FRONTEND_HEAD=$$(git -C ../omyfish-frontend rev-parse --short HEAD 2>/dev/null); \
+		if [ -n "$$FRONTEND_HEAD" ] && [ -n "$$FRONTEND_PIN" ] && [ "$$FRONTEND_PIN" != "$$FRONTEND_HEAD" ]; then \
+			echo "warning: docker-compose.yml pins frontend image tag $$FRONTEND_PIN, but ../omyfish-frontend is at $$FRONTEND_HEAD — bump the pin (see README) to pick up frontend changes"; \
+		fi; \
 	fi
 	@if curl -sf http://localhost:8000/health >/dev/null 2>&1; then \
 		docker compose up -d --build; \
@@ -116,4 +130,5 @@ minio-create-buckets:
 	docker compose exec minio mc alias set local http://localhost:9000 omyfish omyfish_dev
 	docker compose exec minio mc mb local/omyfish-images --ignore-existing
 	docker compose exec minio mc mb local/omyfish-exports --ignore-existing
+	docker compose exec minio mc mb local/product-images --ignore-existing
 

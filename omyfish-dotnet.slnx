@@ -19,6 +19,12 @@
     <Project Path="src/services/ObservationService/OMyFish.ObservationService.Domain/OMyFish.ObservationService.Domain.csproj" />
     <Project Path="src/services/ObservationService/OMyFish.ObservationService.Infrastructure/OMyFish.ObservationService.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/services/ShopService/">
+    <Project Path="src/services/ShopService/OMyFish.ShopService.Api/OMyFish.ShopService.Api.csproj" />
+    <Project Path="src/services/ShopService/OMyFish.ShopService.Application/OMyFish.ShopService.Application.csproj" />
+    <Project Path="src/services/ShopService/OMyFish.ShopService.Domain/OMyFish.ShopService.Domain.csproj" />
+    <Project Path="src/services/ShopService/OMyFish.ShopService.Infrastructure/OMyFish.ShopService.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/services/SpeciesService/">
     <Project Path="src/services/SpeciesService/OMyFish.SpeciesService.Api/OMyFish.SpeciesService.Api.csproj" />
     <Project Path="src/services/SpeciesService/OMyFish.SpeciesService.Application/OMyFish.SpeciesService.Application.csproj" />
@@ -34,6 +40,7 @@
     <Project Path="tests/OMyFish.IdentityService.Tests/OMyFish.IdentityService.Tests.csproj" />
     <Project Path="tests/OMyFish.NotificationService.Tests/OMyFish.NotificationService.Tests.csproj" />
     <Project Path="tests/OMyFish.ObservationService.Tests/OMyFish.ObservationService.Tests.csproj" />
+    <Project Path="tests/OMyFish.ShopService.Tests/OMyFish.ShopService.Tests.csproj" />
     <Project Path="tests/OMyFish.SpeciesService.Tests/OMyFish.SpeciesService.Tests.csproj" />
   </Folder>
 </Solution>

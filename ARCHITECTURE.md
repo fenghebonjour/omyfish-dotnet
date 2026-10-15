@@ -33,7 +33,7 @@
        ▼                              ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                     PostgreSQL 16 + PostGIS 3.4                            │
-│    identity_db      predictions (species-svc)      observation_db           │
+│  identity_db   predictions (species-svc)   observation_db   shop (schema)   │
 └────────────────────────────────────────────────────────────────────────────┘
 ┌────────────────────────────────────────────────────────────────────────────┐
 │   MongoDB 7 — species catalog (read-mostly reference data, BACKLOG.md E)  │
@@ -59,6 +59,7 @@
 | **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, MongoDB.Driver (species), EF Core (predictions), MassTransit |
 | **ObservationService**| Observation CRUD, EXIF extraction, PostGIS, GeoJSON        | 8083 | NetTopologySuite, MinIO SDK     |
 | **NotificationService**| Notifications read/mark-read API, async event consumers  | 8084 | Minimal API, EF Core, MassTransit |
+| **ShopService**       | Omyshop: product catalog, cart, Stripe checkout, orders & returns | 8085 | MediatR, EF Core, Stripe.net, MinIO SDK |
 | **AIService**        | EfficientNet-B3 inference, CLIP fallback, Bite Score forecast — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
 
 ## DDD Bounded Contexts
@@ -86,6 +87,18 @@
 │  Command:   CreateObservation│    │  exposes a read/mark-read API.   │
 │  Query:     GetGeoJson       │    │                                  │
 └──────────────────────────────┘    └──────────────────────────────────┘
+
+┌──────────────────────────────┐
+│       SHOP CONTEXT           │
+│                              │
+│  Aggregate: Order            │
+│  Aggregate: Cart             │
+│  Entity:    Product          │
+│  ValueObj:  CartOwner        │
+│  Command:   CheckoutCommand  │
+│  Command:   ConfirmPaymentWebhookCommand │
+│  Command:   RequestReturnCommand │
+└──────────────────────────────┘
 ```
 
 ## Clean Architecture (per service)
@@ -230,6 +243,24 @@ SELECT json_build_object(
 ) FROM observations WHERE location IS NOT NULL;
 ```
 
+### shop schema (see migrations/ShopService/)
+```sql
+-- shop.products, shop.carts/cart_items, shop.orders/order_lines
+-- Cart.Items/Order.Lines are EF Core owned collections mapped via a private
+-- backing-field navigation — no separate persistence-entity class needed.
+shop.products     (id UUID PK, name, description, price_cents, image_url,
+                   image_storage_key, stock_quantity, active)
+shop.carts        (id UUID PK, user_id UUID UNIQUE, guest_token UUID UNIQUE,
+                   CHECK (user_id IS NULL) != (guest_token IS NULL))
+shop.cart_items   (cart_id FK, product_id, quantity — PK (cart_id, product_id))
+shop.orders       (id UUID PK, user_id, guest_email, total_cents, status,
+                   stripe_session_id UNIQUE, stripe_payment_intent_id,
+                   created_at, paid_at, return_requested_at, returned_at, return_reason,
+                   shipping_recipient_name/line1/line2/city/state/postal_code/country)
+shop.order_lines  (order_id FK, product_id, product_name, unit_price_cents,
+                   quantity — PK (order_id, product_id), snapshotted at checkout)
+```
+
 ## Object Storage Strategy
 
 | Bucket               | Content                        | Lifecycle            |
@@ -238,6 +269,7 @@ SELECT json_build_object(
 | `omyfish-thumbnails` | 300×300 preview renditions     | Generated on upload  |
 | `omyfish-exports`    | GeoJSON / CSV exports          | 7-day TTL            |
 | `omyfish-models`     | ONNX model artifacts           | Version-tagged, CDN  |
+| `product-images`     | Admin-uploaded shop product photos (shop-service) | Replaced on re-upload |
 
 ## API Contracts
 
@@ -300,6 +332,31 @@ payment one.
 ```
 GET /api/v1/notifications              → current user's notifications, newest first
 PUT /api/v1/notifications/{id}/read    → mark one as read
+```
+
+### ShopService
+```
+GET  /api/v1/shop/products                           (public — catalog browsing)
+GET  /api/v1/shop/products/{id}                       (public)
+GET  /api/v1/shop/products/{id}/image                 (public — serves an uploaded photo)
+POST /api/v1/shop/admin/products/{id}/image           (admin only, RequireRole("ADMIN"))
+  Body: multipart/form-data { image: File }
+
+GET  /api/v1/shop/cart                                (public — guest via X-Cart-Token or account via Bearer JWT)
+POST /api/v1/shop/cart/items          { productId, quantity }
+PUT  /api/v1/shop/cart/items/{productId}  { quantity }
+POST /api/v1/shop/cart/merge          { guestToken }   (authenticated — folds a guest cart in after login)
+
+POST /api/v1/shop/checkout            { guestEmail?, successUrl, cancelUrl } → { orderId, checkoutUrl }
+  (public for guests — guestEmail required when checking out without an account)
+POST /api/v1/shop/webhook/stripe      (Stripe calls this directly; signature-verified in the service)
+
+GET  /api/v1/shop/orders/lookup?orderId=&email=       (public — guest order tracking)
+GET  /api/v1/shop/orders                              (authenticated — the caller's own orders)
+GET  /api/v1/shop/orders/{id}                         (authenticated — must own the order)
+POST /api/v1/shop/orders/{id}/returns          { reason }
+GET  /api/v1/shop/orders/admin                        (admin only — every order, newest first)
+PATCH /api/v1/shop/orders/{id}/returns/approve        (admin only)
 ```
 
 ## Security Architecture
