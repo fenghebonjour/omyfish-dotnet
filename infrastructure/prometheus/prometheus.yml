@@ -18,6 +18,11 @@ scrape_configs:
       - targets: ['observation-service:8080']
     metrics_path: '/metrics'
 
+  - job_name: 'shop-service'
+    static_configs:
+      - targets: ['shop-service:8080']
+    metrics_path: '/metrics'
+
   - job_name: 'notification-service'
     static_configs:
       - targets: ['notification-service:8080']

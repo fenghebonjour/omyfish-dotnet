@@ -72,6 +72,6 @@ public class MinIOImageStorageService : IImageStorageService
         var dot = originalFileName.LastIndexOf('.');
         if (dot < 0) return DefaultExtension;
         var ext = originalFileName[(dot + 1)..].ToLowerInvariant();
-        return ext.Length is > 0 and <= 8 && ext.All(char.IsLetterOrDigit) ? $".{ext}" : DefaultExtension;
+        return ext.Length is > 0 and <= 8 && ext.All(char.IsAsciiLetterOrDigit) ? $".{ext}" : DefaultExtension;
     }
 }

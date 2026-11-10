@@ -2,6 +2,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY src/shared/OMyFish.Shared.BuildingBlocks/OMyFish.Shared.BuildingBlocks.csproj src/shared/OMyFish.Shared.BuildingBlocks/
+COPY src/shared/OMyFish.Shared.Contracts/OMyFish.Shared.Contracts.csproj src/shared/OMyFish.Shared.Contracts/
 COPY src/services/ShopService/OMyFish.ShopService.Domain/OMyFish.ShopService.Domain.csproj src/services/ShopService/OMyFish.ShopService.Domain/
 COPY src/services/ShopService/OMyFish.ShopService.Application/OMyFish.ShopService.Application.csproj src/services/ShopService/OMyFish.ShopService.Application/
 COPY src/services/ShopService/OMyFish.ShopService.Infrastructure/OMyFish.ShopService.Infrastructure.csproj src/services/ShopService/OMyFish.ShopService.Infrastructure/

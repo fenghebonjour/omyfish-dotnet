@@ -1,3 +1,4 @@
+using OMyFish.ShopService.Application;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -54,8 +55,8 @@ public class ShopApiFixture : WebApplicationFactory<Program>, IAsyncLifetime
         }));
         builder.ConfigureTestServices(services =>
         {
-            services.RemoveAll<IPaymentGateway>();
-            services.AddSingleton<IPaymentGateway>(FakePayment);
+            services.RemoveAll<ShopPaymentProcessorRegistry>();
+            services.AddSingleton(new ShopPaymentProcessorRegistry([FakePayment], "stripe"));
             services.RemoveAll<IImageStorageService>();
             services.AddSingleton<IImageStorageService>(FakeStorage);
         });
@@ -67,14 +68,20 @@ public class ShopApiCollection : ICollectionFixture<ShopApiFixture>;
 
 public sealed class FakePaymentGateway : IPaymentGateway
 {
+    public string Name => "stripe";
     public bool IsConfigured { get; set; } = true;
-    public string NextSessionId { get; set; } = "sess_fake";
+    // One session id per order, like real Stripe — orders.stripe_session_id is unique.
+    public string LastSessionId { get; private set; } = "";
     public string NextCheckoutUrl { get; set; } = "https://stripe.test/checkout/sess_fake";
 
     public Task<CheckoutSession?> CreateCheckoutSessionAsync(
         Guid orderId, IReadOnlyList<PaymentLineItem> lines, string successUrl, string cancelUrl,
-        string idempotencyKey, string? customerEmail, CancellationToken ct = default) =>
-        Task.FromResult<CheckoutSession?>(IsConfigured ? new CheckoutSession(NextSessionId, NextCheckoutUrl) : null);
+        string idempotencyKey, string? customerEmail, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return Task.FromResult<CheckoutSession?>(null);
+        LastSessionId = $"sess_{orderId:N}";
+        return Task.FromResult<CheckoutSession?>(new CheckoutSession(LastSessionId, NextCheckoutUrl));
+    }
 
     public Task<RefundResult?> RefundAsync(
         string? paymentIntentId, long? amountCents, string idempotencyKey, CancellationToken ct = default) =>

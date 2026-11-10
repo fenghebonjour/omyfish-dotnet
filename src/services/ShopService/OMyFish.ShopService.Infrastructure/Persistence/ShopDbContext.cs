@@ -7,9 +7,15 @@ public class ShopDbContext : DbContext
 {
     public ShopDbContext(DbContextOptions<ShopDbContext> options) : base(options) { }
 
+    // For ShopReadDbContext, which needs its own DbContextOptions<T> type to be registered
+    // separately in DI.
+    protected ShopDbContext(DbContextOptions options) : base(options) { }
+
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Cart> Carts => Set<Cart>();
     public DbSet<Order> Orders => Set<Order>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<OrderEventLedgerEntry> OrderEventLedger => Set<OrderEventLedgerEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +67,7 @@ public class ShopDbContext : DbContext
             o.Property(x => x.Status).HasColumnName("status").HasConversion<string>();
             o.Property(x => x.StripeSessionId).HasColumnName("stripe_session_id");
             o.Property(x => x.StripePaymentIntentId).HasColumnName("stripe_payment_intent_id");
+            o.Property(x => x.PaymentProcessor).HasColumnName("payment_processor").HasMaxLength(20);
             o.Property(x => x.CreatedAt).HasColumnName("created_at");
             o.Property(x => x.PaidAt).HasColumnName("paid_at");
             o.Property(x => x.ReturnRequestedAt).HasColumnName("return_requested_at");
@@ -95,6 +102,34 @@ public class ShopDbContext : DbContext
                 sa.Property(x => x.Country).HasColumnName("shipping_country").HasMaxLength(2);
             });
             o.Ignore(x => x.DomainEvents);
+        });
+
+        modelBuilder.Entity<IdempotencyRecord>(r =>
+        {
+            r.ToTable("idempotency_keys", "shop");
+            r.HasKey(x => x.Id);
+            r.Property(x => x.Id).HasColumnName("id");
+            r.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(255);
+            r.Property(x => x.Endpoint).HasColumnName("endpoint").HasMaxLength(20);
+            r.Property(x => x.OwnerKey).HasColumnName("owner_key").HasMaxLength(255);
+            r.Property(x => x.Completed).HasColumnName("completed");
+            r.Property(x => x.OrderId).HasColumnName("order_id");
+            r.Property(x => x.CheckoutUrl).HasColumnName("checkout_url").HasMaxLength(512);
+            r.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<OrderEventLedgerEntry>(e =>
+        {
+            e.ToTable("order_event_ledger", "shop");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.EventId).HasColumnName("event_id");
+            e.Property(x => x.OrderId).HasColumnName("order_id");
+            e.Property(x => x.ProductId).HasColumnName("product_id");
+            e.Property(x => x.ProductName).HasColumnName("product_name").HasMaxLength(255);
+            e.Property(x => x.Quantity).HasColumnName("quantity");
+            e.Property(x => x.UnitPriceCents).HasColumnName("unit_price_cents");
+            e.Property(x => x.ReceivedAt).HasColumnName("received_at");
         });
     }
 }

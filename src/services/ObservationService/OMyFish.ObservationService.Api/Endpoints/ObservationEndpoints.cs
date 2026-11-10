@@ -47,10 +47,12 @@ public static class ObservationEndpoints
         group.MapGet("/{id:guid}", async (
             Guid id,
             IMediator mediator,
+            HttpContext ctx,
             CancellationToken ct = default) =>
         {
             var result = await mediator.Send(new GetObservationByIdQuery(id), ct);
-            return result is null ? Results.NotFound() : Results.Ok(result);
+            // Someone else's observation 404s, same as delete — don't hand any caller any id (IDOR).
+            return result is null || result.UserId != GetUserId(ctx) ? Results.NotFound() : Results.Ok(result);
         })
         .WithName("GetObservationById");
 

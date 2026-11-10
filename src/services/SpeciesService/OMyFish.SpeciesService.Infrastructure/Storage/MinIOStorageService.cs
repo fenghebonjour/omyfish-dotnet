@@ -20,7 +20,7 @@ public class MinIOStorageService : IStorageService
     {
         await EnsureBucketAsync(ct);
 
-        var key = $"identify/{Guid.NewGuid()}/{fileName}";
+        var key = $"identify/{Guid.NewGuid()}{ExtensionOf(fileName)}";
         var args = new PutObjectArgs()
             .WithBucket(_bucket)
             .WithObject(key)
@@ -39,5 +39,18 @@ public class MinIOStorageService : IStorageService
         if (!exists)
             await _minio.MakeBucketAsync(
                 new MakeBucketArgs().WithBucket(_bucket), ct);
+    }
+
+    private const string DefaultExtension = ".jpg";
+
+    // Only a short alphanumeric extension of the client filename is kept, so a name like
+    // "fish.jpg/../../evil" can't put path separators into the object key.
+    private static string ExtensionOf(string? fileName)
+    {
+        if (fileName is null) return DefaultExtension;
+        var dot = fileName.LastIndexOf('.');
+        if (dot < 0) return DefaultExtension;
+        var e = fileName[(dot + 1)..].ToLowerInvariant();
+        return e.Length is > 0 and <= 8 && e.All(char.IsAsciiLetterOrDigit) ? $".{e}" : DefaultExtension;
     }
 }

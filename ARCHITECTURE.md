@@ -59,7 +59,7 @@
 | **SpeciesService**   | AI orchestration, species KB, CQRS predictions             | 8082 | MediatR, MongoDB.Driver (species), EF Core (predictions), MassTransit |
 | **ObservationService**| Observation CRUD, EXIF extraction, PostGIS, GeoJSON        | 8083 | NetTopologySuite, MinIO SDK     |
 | **NotificationService**| Notifications read/mark-read API, async event consumers  | 8084 | Minimal API, EF Core, MassTransit |
-| **ShopService**       | Omyshop: product catalog, cart, Stripe checkout, orders & returns | 8085 | MediatR, EF Core, Stripe.net, MinIO SDK |
+| **ShopService**       | Omyshop: product catalog, cart, Stripe/PayPal/Adyen checkout, orders & returns | 8085 | MediatR, EF Core, Stripe.net, Adyen, Polly, StackExchange.Redis, Confluent.Kafka, MinIO SDK |
 | **AIService**        | EfficientNet-B3 inference, CLIP fallback, Bite Score forecast — shared `omyfish-ai` | 8000 | Python 3.11, FastAPI, PyTorch   |
 
 ## DDD Bounded Contexts
@@ -255,11 +255,21 @@ shop.carts        (id UUID PK, user_id UUID UNIQUE, guest_token UUID UNIQUE,
 shop.cart_items   (cart_id FK, product_id, quantity — PK (cart_id, product_id))
 shop.orders       (id UUID PK, user_id, guest_email, total_cents, status,
                    stripe_session_id UNIQUE, stripe_payment_intent_id,
+                   payment_processor (stripe|paypal|adyen|mock — owns the two ids above),
                    created_at, paid_at, return_requested_at, returned_at, return_reason,
                    shipping_recipient_name/line1/line2/city/state/postal_code/country)
 shop.order_lines  (order_id FK, product_id, product_name, unit_price_cents,
                    quantity — PK (order_id, product_id), snapshotted at checkout)
+shop.idempotency_keys   (id, idempotency_key, endpoint, owner_key, completed, order_id,
+                         checkout_url, created_at — UNIQUE (idempotency_key, endpoint))
+shop.order_event_ledger (id, event_id, order_id, product_id, product_name, quantity,
+                         unit_price_cents, received_at — UNIQUE (event_id, product_id);
+                         built from the omyfish.shop.orders Kafka topic)
 ```
+
+Stock is decremented with one atomic conditional `UPDATE ... SET stock_quantity =
+stock_quantity - n WHERE stock_quantity >= n` (and restocked atomically), never
+load-modify-save, so concurrent checkouts can't oversell.
 
 ## Object Storage Strategy
 
@@ -348,8 +358,12 @@ PUT  /api/v1/shop/cart/items/{productId}  { quantity }
 POST /api/v1/shop/cart/merge          { guestToken }   (authenticated — folds a guest cart in after login)
 
 POST /api/v1/shop/checkout            { guestEmail?, successUrl, cancelUrl } → { orderId, checkoutUrl }
+  Header: Idempotency-Key (required) — a retry with the same key replays the first result
   (public for guests — guestEmail required when checking out without an account)
-POST /api/v1/shop/webhook/stripe      (Stripe calls this directly; signature-verified in the service)
+  429 past 50 attempts/s per instance; 503 while the kill switch is off or the processor's
+  circuit is open
+POST /api/v1/shop/webhook/{processor} (stripe|paypal|adyen call this directly; signature-verified)
+POST /api/v1/shop/admin/feature-flags/checkout  { enabled }   (admin only — checkout kill switch)
 
 GET  /api/v1/shop/orders/lookup?orderId=&email=       (public — guest order tracking)
 GET  /api/v1/shop/orders                              (authenticated — the caller's own orders)

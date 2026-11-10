@@ -1,0 +1,267 @@
+{
+  "id": null,
+  "uid": "shop-flash-sale",
+  "title": "Shop Flash Sale (shop-service)",
+  "tags": [
+    "omyfish",
+    "shop-service",
+    "flash-sale"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "QPS (shop-service)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_received_total{job=\"shop-service\"}[1m]))",
+          "legendFormat": "req/s"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Checkout Outcomes/s",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(shop_checkout_requests_total[1m]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Thread Pool Threads / Queue",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "system_runtime_dotnet_thread_pool_thread_count{job=\"shop-service\"}",
+          "legendFormat": "threads"
+        },
+        {
+          "expr": "system_runtime_dotnet_thread_pool_queue_length{job=\"shop-service\"}",
+          "legendFormat": "queued"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Npgsql Connections In Use",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(npgsql_db_client_connection_count{job=\"shop-service\",db_client_connection_state=\"used\"})",
+          "legendFormat": "used"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Latency p95 / p99 / p99.9 (ms)",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"shop-service\"}[5m]))) * 1000",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"shop-service\"}[5m]))) * 1000",
+          "legendFormat": "p99"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"shop-service\"}[5m]))) * 1000",
+          "legendFormat": "p99.9"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Thread Pool (threads / queue length / work items/s)",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "system_runtime_dotnet_thread_pool_thread_count{job=\"shop-service\"}",
+          "legendFormat": "threads"
+        },
+        {
+          "expr": "system_runtime_dotnet_thread_pool_queue_length{job=\"shop-service\"}",
+          "legendFormat": "queue length"
+        },
+        {
+          "expr": "rate(system_runtime_dotnet_thread_pool_work_item_count{job=\"shop-service\"}[1m])",
+          "legendFormat": "work items/s"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Npgsql Pool Used / Idle (primary vs replica)",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (db_client_connection_state) (npgsql_db_client_connection_count{job=\"shop-service\",db_client_connection_pool_name!~\".*postgres-replica.*\"})",
+          "legendFormat": "primary {{db_client_connection_state}}"
+        },
+        {
+          "expr": "sum by (db_client_connection_state) (npgsql_db_client_connection_count{job=\"shop-service\",db_client_connection_pool_name=~\".*postgres-replica.*\"})",
+          "legendFormat": "replica {{db_client_connection_state}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Product Cache Hit/Miss Ratio (L1/L2/miss)",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (cache, result) (rate(shop_cache_requests_total{job=\"shop-service\"}[1m]))",
+          "legendFormat": "{{cache}} {{result}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "GC Pause (shop-service, s/s)",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(system_runtime_dotnet_gc_pause_time{job=\"shop-service\"}[1m])",
+          "legendFormat": "gc pause"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Checkout Requests by Outcome (incl. 429s)",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(shop_checkout_requests_total[1m]))",
+          "legendFormat": "{{result}}"
+        },
+        {
+          "expr": "sum(rate(http_requests_received_total{job=\"shop-service\",endpoint=\"/api/v1/shop/checkout\",code=\"429\"}[1m]))",
+          "legendFormat": "rate-limited (429)"
+        }
+      ]
+    }
+  ]
+}

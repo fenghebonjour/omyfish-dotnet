@@ -1,0 +1,33 @@
+# Override file for k6 load testing (src/services/ShopService/loadtest/) — NOT part of the
+# normal stack. Run alongside the base compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d --build shop-service wiremock
+# Adds a WireMock stand-in payment gateway and switches shop-service onto
+# MockPaymentCheckoutGateway instead of real Stripe/PayPal/Adyen, so load tests never touch
+# real credentials or processor rate limits. Port of omyfish-java's docker-compose.loadtest.yml.
+#
+# Then, e.g.:
+#   docker run --rm --network omyfish-dotnet_omyfish-net \
+#     -v "$PWD/src/services/ShopService/loadtest/scripts:/scripts:ro" grafana/k6 run /scripts/ramp-up.js
+services:
+  wiremock:
+    image: wiremock/wiremock:3.9.1
+    # No host port by default (the java stack's loadtest override publishes 8089).
+    volumes:
+      - ./src/services/ShopService/loadtest/wiremock/mappings:/home/wiremock/mappings:ro
+    networks: [omyfish-net]
+    healthcheck:
+      # Not --spider: wiremock's /__admin/mappings response is chunked, which wget's spider
+      # mode treats as a failure.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/__admin/mappings"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+
+  shop-service:
+    environment:
+      Payment__Mock__Enabled: "true"
+      Payment__Mock__BaseUrl: http://wiremock:8080
+      Payment__ShopDefaultProcessor: mock
+    depends_on:
+      wiremock:
+        condition: service_healthy

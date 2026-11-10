@@ -7,6 +7,10 @@ namespace OMyFish.ShopService.Application.Interfaces;
 // per-cart line items and a one-shot refund rather than recurring billing.
 public interface IPaymentGateway
 {
+    /// Stable id for this gateway, e.g. "stripe" — routes refunds/webhooks to the processor
+    /// that owns an order (Order.PaymentProcessor).
+    string Name { get; }
+
     bool IsConfigured { get; }
 
     // customerEmail pre-fills/locks Stripe's own email field — pass the guest's email for a
@@ -31,8 +35,10 @@ public sealed record RefundResult(string RefundId, string? Status, long? AmountC
 
 public enum PaymentEventType { SessionCompleted, SessionExpired }
 
-// ShippingAddress is populated for SessionCompleted (Checkout always collects it) and null for
-// SessionExpired.
+// ShippingAddress is populated for SessionCompleted when the processor collects one (Stripe,
+// PayPal — not Adyen) and null for SessionExpired. OrderId is set instead of relying on
+// StripeSessionId when a processor's webhook only echoes back our own order reference
+// (Adyen's merchantReference) rather than the session id it handed out at checkout.
 public sealed record PaymentEvent(
     PaymentEventType Type, string StripeSessionId, string? StripePaymentIntentId,
-    ShippingAddress? ShippingAddress);
+    ShippingAddress? ShippingAddress, Guid? OrderId = null);

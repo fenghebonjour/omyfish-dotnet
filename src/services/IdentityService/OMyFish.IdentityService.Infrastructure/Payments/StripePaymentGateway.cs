@@ -24,7 +24,16 @@ public class StripePaymentGateway : IPaymentGateway
 
     public bool IsConfigured => !string.IsNullOrEmpty(_secretKey);
 
-    private Stripe.StripeClient Client => new(_secretKey);
+    // Stripe.net's default HTTP timeout is 80s — far too long to hold a checkout request (and a
+    // bulkhead slot) on a hung Stripe. Same 10s connect / 15s read policy as omyfish-java's
+    // StripeHttpSupport. One shared instance: StripeClient is cheap, HttpClient is not.
+    private static readonly Stripe.SystemNetHttpClient Http = new(new HttpClient(
+        new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(10) })
+    {
+        Timeout = TimeSpan.FromSeconds(15),
+    });
+
+    private Stripe.StripeClient Client => new(_secretKey, httpClient: Http);
 
     public async Task<SubscriptionIntentResult?> CreateSubscriptionIntentAsync(
         Guid userId, string email, string plan, string idempotencyKey, CancellationToken ct = default)

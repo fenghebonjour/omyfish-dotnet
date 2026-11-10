@@ -76,8 +76,14 @@ public static class AuthEndpoints
         }).RequireAuthorization();
 
         app.MapPost("/api/v1/users/{userId:guid}/api-keys", async (
-            Guid userId, ApiKeyRequest req, IMediator mediator, CancellationToken ct) =>
+            Guid userId, ApiKeyRequest req, ClaimsPrincipal principal, IMediator mediator, CancellationToken ct) =>
         {
+            // userId comes from the URL — bind it to the caller, or any logged-in user could mint
+            // a working API key for any other account (IDOR). ADMIN is exempt.
+            var callerId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(callerId, out var caller)) return Results.Unauthorized();
+            if (caller != userId && !principal.IsInRole("ADMIN")) return Results.Forbid();
+
             var result = await mediator.Send(new CreateApiKeyCommand(userId, req.Name), ct);
             return result is null
                 ? Results.NotFound()
