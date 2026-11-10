@@ -5,13 +5,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" Version="2.6.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.4" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="Adyen" Version="36.1.0" />
     <PackageReference Include="Minio" Version="6.0.3" />
+    <PackageReference Include="Polly.RateLimiting" Version="8.6.4" />
+    <PackageReference Include="prometheus-net" Version="8.2.1" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
     <PackageReference Include="Stripe.net" Version="52.1.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OMyFish.ShopService.Application\OMyFish.ShopService.Application.csproj" />
     <ProjectReference Include="..\OMyFish.ShopService.Domain\OMyFish.ShopService.Domain.csproj" />
     <ProjectReference Include="..\..\..\shared\OMyFish.Shared.BuildingBlocks\OMyFish.Shared.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\..\shared\OMyFish.Shared.Contracts\OMyFish.Shared.Contracts.csproj" />
   </ItemGroup>
 </Project>

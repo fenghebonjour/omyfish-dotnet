@@ -9,7 +9,7 @@ public sealed record UploadProductImageCommand(
     Guid ProductId, Stream Data, long Size, string? ContentType, string? OriginalFileName) : ICommand<ProductDto>;
 
 internal sealed class UploadProductImageCommandHandler(
-    IProductRepository productRepo, IImageStorageService storage, IUnitOfWork unitOfWork)
+    IProductRepository productRepo, IImageStorageService storage, IUnitOfWork unitOfWork, IProductCatalogCache cache)
     : ICommandHandler<UploadProductImageCommand, ProductDto>
 {
     public async Task<ProductDto> Handle(UploadProductImageCommand command, CancellationToken ct)
@@ -21,6 +21,9 @@ internal sealed class UploadProductImageCommandHandler(
         product.SetImage($"/api/v1/shop/products/{command.ProductId}/image", key);
 
         await unitOfWork.SaveChangesAsync(ct);
+        // The listing and detail views both embed ImageUrl — stale entries would keep showing
+        // the old (placeholder) image for up to the cache TTL.
+        await cache.EvictProductAsync(command.ProductId, ct);
         return product.ToDto();
     }
 }

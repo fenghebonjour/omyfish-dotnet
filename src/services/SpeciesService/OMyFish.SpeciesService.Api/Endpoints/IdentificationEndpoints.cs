@@ -6,6 +6,11 @@ namespace OMyFish.SpeciesService.Api.Endpoints;
 
 public static class IdentificationEndpoints
 {
+    private static readonly HashSet<string> AllowedContentTypes =
+        ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+    private const long MaxImageBytes = 20L * 1024 * 1024;
+    private const int MaxTopK = 25;
+
     public static void MapIdentificationEndpoints(this WebApplication app)
     {
         app.MapPost("/api/v1/species/identify", async (
@@ -17,13 +22,18 @@ public static class IdentificationEndpoints
         {
             if (image.Length == 0)
                 return Results.BadRequest("No image provided.");
+            if (image.Length > MaxImageBytes)
+                return Results.Problem("Image must be 20MB or smaller.", statusCode: StatusCodes.Status413PayloadTooLarge);
+            var mediaType = image.ContentType?.Split(';')[0].Trim().ToLowerInvariant();
+            if (mediaType is null || !AllowedContentTypes.Contains(mediaType))
+                return Results.Problem("Unsupported image type.", statusCode: StatusCodes.Status415UnsupportedMediaType);
 
             using var ms = new MemoryStream();
             await image.CopyToAsync(ms, ct);
             var imageBytes = ms.ToArray();
 
             var userId = GetUserIdFromClaims(ctx);
-            var command = new IdentifyFishCommand(imageBytes, image.FileName, image.ContentType, topK, userId);
+            var command = new IdentifyFishCommand(imageBytes, image.FileName, image.ContentType, Math.Clamp(topK, 1, MaxTopK), userId);
             try
             {
                 var result = await mediator.Send(command, ct);

@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/checkout/sessions"
+  },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 100,
+    "jsonBody": { "status": "ok" },
+    "headers": { "Content-Type": "application/json" }
+  }
+}

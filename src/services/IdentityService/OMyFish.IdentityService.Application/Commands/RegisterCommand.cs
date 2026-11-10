@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using OMyFish.IdentityService.Domain.Entities;
 using OMyFish.IdentityService.Domain.Interfaces;
 using OMyFish.Shared.BuildingBlocks.CQRS;
@@ -10,6 +11,10 @@ public sealed record UserDto(Guid Id, string Email, string? DisplayName, string 
 
 internal sealed class RegisterCommandHandler : ICommandHandler<RegisterCommand, UserDto>
 {
+    private const int MinPasswordLength = 8;
+    private const int MaxFieldLength = 255;
+    private static readonly Regex EmailShape = new(@"^[^@\s]+@[^@\s.]+\.[^@\s]+$", RegexOptions.Compiled);
+
     private readonly IUserRepository _users;
     private readonly ISubscriptionRepository _subscriptions;
 
@@ -23,6 +28,13 @@ internal sealed class RegisterCommandHandler : ICommandHandler<RegisterCommand, 
     {
         if (string.IsNullOrWhiteSpace(command.Email) || string.IsNullOrWhiteSpace(command.Password))
             throw new ArgumentException("Email and password are required.");
+        if (command.Email.Length > MaxFieldLength || !EmailShape.IsMatch(command.Email))
+            throw new ArgumentException("A valid email is required.");
+        if (command.Password.Length is < MinPasswordLength or > MaxFieldLength)
+            throw new ArgumentException(
+                $"Password must be between {MinPasswordLength} and {MaxFieldLength} characters.");
+        if (command.DisplayName is { Length: > MaxFieldLength })
+            throw new ArgumentException("Display name is too long.");
 
         if (await _users.FindByEmailAsync(command.Email, ct) is not null)
             throw new EmailAlreadyRegisteredException("Email already registered.");

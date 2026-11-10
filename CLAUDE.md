@@ -163,15 +163,49 @@ same idiom as `IdentityService.AdminEndpoints`.
   `IReadOnlyList<T>` navigations backed by a private field — EF Core's documented
   "backing field" convention maps straight to them in `ShopDbContext`, no separate
   persistence-entity class needed.
-- Checkout is Stripe Checkout Sessions (`OMyFish.ShopService.Infrastructure/Payments/StripeCheckoutGateway.cs`,
-  `IPaymentGateway` — deliberately separate from `IdentityService`'s subscription-shaped
-  `IPaymentGateway`). `CheckoutCommandHandler` reserves stock + creates the order in its own
-  `SaveChangesAsync` *before* calling Stripe, so the HTTP round-trip never holds a DB
-  transaction open; a Stripe failure compensates via `CancelOrderCommand` (restock +
-  cancel) rather than a rollback. `/webhook/stripe` confirms payment the same way identity's
-  billing webhook does, including the `EventUtility.ConstructEvent(...,
-  throwOnApiVersionMismatch: false)` fix for Stripe.net's api_version-mismatch gotcha
-  (BACKLOG item L).
+- Checkout goes through `ShopPaymentProcessorRegistry` (default `Payment:ShopDefaultProcessor`,
+  falling back to the first configured one): Stripe Checkout Sessions, PayPal Orders v2, or
+  Adyen Sessions (`Infrastructure/Payments/*CheckoutGateway.cs`, shop's own `IPaymentGateway` —
+  deliberately separate from `IdentityService`'s subscription-shaped one).
+  `Order.PaymentProcessor` records which one owns an order; refunds and
+  `/webhook/{processor}` route by it, and a verified event never settles another processor's
+  order. Each gateway is wrapped in `ResilientPaymentGateway` (its own Polly retry → circuit
+  breaker → 20-call bulkhead; retrying is safe because every gateway forwards the
+  idempotency key to the processor). `MockPaymentCheckoutGateway` exists only under
+  `docker-compose.loadtest.yml`.
+- `CheckoutCommandHandler` requires an `Idempotency-Key` header (`shop.idempotency_keys`, same
+  reserve → complete/replay → delete-on-failure pattern as identity's billing), then reserves
+  stock + creates the order in its own transaction *before* calling the processor, so the HTTP
+  round-trip never holds a DB transaction open; a processor failure compensates via
+  `CancelOrderCommand` (restock + cancel) rather than a rollback. Stock changes go through
+  `IProductRepository.TryDecreaseStockAsync`/`IncreaseStockAsync` — atomic conditional
+  `ExecuteUpdateAsync`s that run immediately, so they're wrapped together with
+  `SaveChangesAsync` in `IUnitOfWork.ExecuteInTransactionAsync`. Never go back to
+  load-decrement-save on `Product` (it oversold under concurrency). Stripe's webhook keeps the
+  `EventUtility.ConstructEvent(..., throwOnApiVersionMismatch: false)` fix (BACKLOG item L).
+  PayPal captures *inside* its webhook (CHECKOUT.ORDER.APPROVED); Adyen's event carries the
+  order id rather than a session id. Neither has an abandoned-checkout webhook, so
+  `StaleOrderSweepService` cancels + restocks any order still `PendingPayment` after
+  `Shop:StaleOrderSweep:TimeoutMinutes` (180).
+- Flash-sale hardening (port of omyfish-java's): `/checkout` has a global 50/s rate limiter
+  (429, no queue) and an in-memory kill switch (`FeatureFlags`, toggled via admin-only
+  `POST /admin/feature-flags/checkout`, per-instance). Catalog reads go through
+  `IProductCatalogCache` (memory L1 + Redis L2 `Redis:ConnectionString`, jittered TTLs,
+  negative cache, every Redis call swallowed to a miss) and `IProductCatalogReader` (the
+  `ShopReadDbContext` read replica, `ConnectionStrings:Replica`, falling back to the primary).
+  Cached `StockQuantity` is display-only and can lag. On payment confirmation the webhook
+  publishes `OrderPlacedEvent` to Kafka (`omyfish.shop.orders`, 3 partitions, keyed by the first
+  line's productId — fire-and-forget, *not* through an outbox), consumed by shop's
+  `OrderEventLedgerConsumer` → `shop.order_event_ledger` and notification-service's
+  `OrderPlacedConsumer` → an `ORDER_PLACED` notification (both dedup by event id). Metrics:
+  `shop_checkout_requests_total{result}`, `shop_cache_requests_total{cache,result}`; Grafana
+  dashboard `infrastructure/grafana/provisioning/dashboards/flash-sale.json`. k6 scenarios live in
+  `src/services/ShopService/loadtest/` (run against `docker-compose.loadtest.yml`).
+- Compose's `postgres-replica` clones the primary via pg_basebackup, which needs the
+  replication `pg_hba` line from `infrastructure/postgres/primary-init/allow-replication.sh` —
+  that only runs on a *fresh* `postgres_data` volume; on an older one, run the two commands the
+  replica's log prints. `redis`/`kafka`/`postgres-replica` publish no host ports (the java stack
+  uses 6379/9092/5433).
 - Product photos: admin-only upload (`AdminProductEndpoints`), served back through the
   service's own `/image` endpoint rather than a raw MinIO URL — unlike
   `ObservationService.MinIOStorageService.GetPublicUrl`, which does expose MinIO directly.
@@ -204,6 +238,9 @@ ai-service also exposes the Quebec Regs Advisor (`/regs/*` — limits, consumpti
 - `Npgsql.EntityFrameworkCore.PostgreSQL` (EF Core driver)
 - `NetTopologySuite` (spatial types for PostGIS)
 - `MongoDB.Driver` (species-service's species catalog only — see Database above)
+- `Adyen`, `Polly.RateLimiting`, `StackExchange.Redis`, `Confluent.Kafka` (shop-service's
+  processors, payment resilience, catalog L2 cache, order-event stream; Confluent.Kafka also
+  in notification-service)
 - `Stripe.net` (identity-service's subscription billing and shop-service's one-time checkout)
 - `Minio` (object storage — observation-service's photos, shop-service's product images)
 - `Yarp.ReverseProxy` (API Gateway)

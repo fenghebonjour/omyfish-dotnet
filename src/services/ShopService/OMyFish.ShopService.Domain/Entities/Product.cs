@@ -1,4 +1,3 @@
-using OMyFish.ShopService.Domain.Exceptions;
 using OMyFish.Shared.BuildingBlocks.Domain;
 
 namespace OMyFish.ShopService.Domain.Entities;
@@ -36,13 +35,4 @@ public sealed class Product : AggregateRoot<Guid>
         ImageUrl = imageUrl;
         ImageStorageKey = imageStorageKey;
     }
-
-    public void DecreaseStock(int quantity)
-    {
-        if (quantity > StockQuantity)
-            throw new InsufficientStockException(Id, quantity, StockQuantity);
-        StockQuantity -= quantity;
-    }
-
-    public void Restock(int quantity) => StockQuantity += quantity;
 }

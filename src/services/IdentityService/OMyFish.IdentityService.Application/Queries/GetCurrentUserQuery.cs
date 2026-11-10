@@ -15,6 +15,6 @@ internal sealed class GetCurrentUserQueryHandler : IQueryHandler<GetCurrentUserQ
     public async Task<UserDto?> Handle(GetCurrentUserQuery query, CancellationToken ct)
     {
         var user = await _users.FindByIdAsync(query.UserId, ct);
-        return user is null ? null : new UserDto(user.Id, user.Email, user.DisplayName, user.Role);
+        return user is null || !user.IsActive ? null : new UserDto(user.Id, user.Email, user.DisplayName, user.Role);
     }
 }

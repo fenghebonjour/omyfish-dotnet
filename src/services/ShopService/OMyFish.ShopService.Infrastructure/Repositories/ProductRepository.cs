@@ -11,9 +11,6 @@ public class ProductRepository : IProductRepository
 
     public ProductRepository(ShopDbContext db) => _db = db;
 
-    public async Task<IReadOnlyList<Product>> GetAllActiveAsync(CancellationToken ct = default)
-        => await _db.Products.AsNoTracking().Where(p => p.Active).ToListAsync(ct);
-
     public Task<Product?> FindByIdAsync(Guid id, CancellationToken ct = default)
         => _db.Products.FirstOrDefaultAsync(p => p.Id == id, ct);
 
@@ -22,4 +19,14 @@ public class ProductRepository : IProductRepository
         _db.Products.Add(product);
         return Task.CompletedTask;
     }
+
+    public async Task<bool> TryDecreaseStockAsync(Guid productId, int quantity, CancellationToken ct = default)
+        => await _db.Products
+            .Where(p => p.Id == productId && p.StockQuantity >= quantity)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity - quantity), ct) == 1;
+
+    public async Task<bool> IncreaseStockAsync(Guid productId, int quantity, CancellationToken ct = default)
+        => await _db.Products
+            .Where(p => p.Id == productId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.StockQuantity, p => p.StockQuantity + quantity), ct) == 1;
 }

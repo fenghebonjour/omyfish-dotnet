@@ -27,6 +27,13 @@ public class OrderRepository : IOrderRepository
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<Guid>> GetPendingPaymentIdsOlderThanAsync(
+        DateTime cutoff, CancellationToken ct = default)
+        => await _db.Orders
+            .Where(o => o.Status == OrderStatus.PendingPayment && o.CreatedAt < cutoff)
+            .Select(o => o.Id)
+            .ToListAsync(ct);
+
     public Task AddAsync(Order order, CancellationToken ct = default)
     {
         _db.Orders.Add(order);

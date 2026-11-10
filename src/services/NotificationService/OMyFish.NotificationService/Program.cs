@@ -20,6 +20,14 @@ builder.Host.UseSerilog((ctx, cfg) => cfg
 builder.Services.AddDbContext<NotificationDbContext>(opts =>
     opts.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
+// shop-service's Kafka order-event stream (omyfish.shop.orders) — additive alongside the
+// RabbitMQ consumers below; off when Kafka:BootstrapServers isn't set.
+var kafkaBootstrap = builder.Configuration["Kafka:BootstrapServers"];
+if (!string.IsNullOrEmpty(kafkaBootstrap))
+    builder.Services.AddHostedService(sp => new OMyFish.NotificationService.Consumers.OrderPlacedConsumer(
+        kafkaBootstrap, sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILogger<OMyFish.NotificationService.Consumers.OrderPlacedConsumer>>()));
+
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<FishIdentifiedConsumer>();

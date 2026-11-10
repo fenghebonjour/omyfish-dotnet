@@ -103,6 +103,28 @@ public class ObservationEndpointsTests(ObservationApiFixture fixture)
     }
 
     [Fact]
+    public async Task GetObservationById_OwnedByAnotherUser_Returns404()
+    {
+        var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", BuildAccessToken(Guid.NewGuid()));
+        var created = await client.PostAsJsonAsync("/api/v1/observations", new
+        {
+            speciesName = "Walleye",
+            topConfidence = 0.9,
+            imageStorageKey = "stored/owner.jpg",
+        });
+        created.EnsureSuccessStatusCode();
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("observationId").GetGuid();
+
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", BuildAccessToken(Guid.NewGuid()));
+        var response = await client.GetAsync($"/api/v1/observations/{id}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetObservationsGeoJson_IsPublic_Returns200()
     {
         var client = fixture.CreateClient();

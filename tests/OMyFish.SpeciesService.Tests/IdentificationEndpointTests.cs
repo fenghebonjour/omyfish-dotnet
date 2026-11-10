@@ -80,4 +80,18 @@ public class IdentificationEndpointTests(SpeciesApiFixture fixture)
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Identify_NonImageContentType_Returns415()
+    {
+        var client = fixture.CreateClient();
+        using var form = new MultipartFormDataContent();
+        using var content = new ByteArrayContent([1, 2, 3, 4]);
+        content.Headers.ContentType = new("text/html");
+        form.Add(content, "image", "evil.html");
+
+        var response = await client.PostAsync("/api/v1/species/identify", form);
+
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+    }
 }

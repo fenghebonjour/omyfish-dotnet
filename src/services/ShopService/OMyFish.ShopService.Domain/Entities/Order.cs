@@ -19,6 +19,10 @@ public sealed class Order : AggregateRoot<Guid>
     public OrderStatus Status { get; private set; }
     public string? StripeSessionId { get; private set; }
     public string? StripePaymentIntentId { get; private set; }
+    // Which IPaymentGateway owns the ids above — those keep their Stripe names (same as
+    // omyfish-java's Order); this is what disambiguates whose id format they hold (PayPal
+    // order/capture id, Adyen session id/pspReference).
+    public string? PaymentProcessor { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? PaidAt { get; private set; }
     public DateTime? ReturnRequestedAt { get; private set; }
@@ -43,7 +47,11 @@ public sealed class Order : AggregateRoot<Guid>
         return order;
     }
 
-    public void AttachCheckoutSession(string stripeSessionId) => StripeSessionId = stripeSessionId;
+    public void AttachCheckoutSession(string stripeSessionId, string paymentProcessor)
+    {
+        StripeSessionId = stripeSessionId;
+        PaymentProcessor = paymentProcessor;
+    }
 
     public void MarkPaid(string stripePaymentIntentId, ShippingAddress? shippingAddress)
     {

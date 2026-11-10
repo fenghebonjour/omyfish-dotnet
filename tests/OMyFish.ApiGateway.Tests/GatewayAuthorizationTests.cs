@@ -77,6 +77,8 @@ public class GatewayAuthorizationTests : IClassFixture<WebApplicationFactory<Pro
     [InlineData("/api/v1/shop/cart")]
     [InlineData("/api/v1/shop/checkout")]
     [InlineData("/api/v1/shop/webhook/stripe")]
+    [InlineData("/api/v1/shop/webhook/paypal")]
+    [InlineData("/api/v1/shop/webhook/adyen")]
     [InlineData("/api/v1/shop/orders/lookup")]
     public async Task AnonymousPolicyRoute_WithoutToken_IsNotRejectedByAuth(string path)
     {

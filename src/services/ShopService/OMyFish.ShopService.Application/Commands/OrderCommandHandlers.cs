@@ -1,3 +1,4 @@
+using OMyFish.ShopService.Application;
 using OMyFish.ShopService.Application.Dtos;
 using OMyFish.ShopService.Application.Interfaces;
 using OMyFish.ShopService.Domain.Entities;
@@ -11,32 +12,35 @@ internal sealed class ReserveOrderCommandHandler(
     ICartRepository cartRepo, IProductRepository productRepo, IOrderRepository orderRepo, IUnitOfWork unitOfWork)
     : ICommandHandler<ReserveOrderCommand, Order>
 {
-    public async Task<Order> Handle(ReserveOrderCommand command, CancellationToken ct)
-    {
-        var cart = await cartRepo.FindByOwnerAsync(command.Owner, ct) ?? Cart.CreateEmpty(command.Owner);
-        cart.RequireNotEmpty();
-
-        var lines = new List<OrderLine>();
-        foreach (var item in cart.Items)
+    public Task<Order> Handle(ReserveOrderCommand command, CancellationToken ct) =>
+        // One transaction for the order insert, every line's stock decrement, and the cart
+        // clear — the same atomicity Java's @Transactional wrapper around reserve() provides.
+        unitOfWork.ExecuteInTransactionAsync(async () =>
         {
-            var product = await productRepo.FindByIdAsync(item.ProductId, ct)
-                          ?? throw new ProductNotFoundException(item.ProductId);
-            product.DecreaseStock(item.Quantity);
-            lines.Add(new OrderLine(product.Id, product.Name, product.PriceCents, item.Quantity));
-        }
+            var cart = await cartRepo.FindByOwnerAsync(command.Owner, ct) ?? Cart.CreateEmpty(command.Owner);
+            cart.RequireNotEmpty();
 
-        var order = Order.CreatePendingPayment(
-            command.Owner.IsGuest ? null : command.Owner.UserId, command.GuestEmail, lines);
-        await orderRepo.AddAsync(order, ct);
+            var lines = new List<OrderLine>();
+            foreach (var item in cart.Items)
+            {
+                var product = await productRepo.FindByIdAsync(item.ProductId, ct)
+                              ?? throw new ProductNotFoundException(item.ProductId);
+                // product.StockQuantity is only a snapshot for the error message — the atomic
+                // conditional UPDATE is the authority on whether enough stock remains, so a stale
+                // read between this load and the UPDATE can't oversell.
+                if (!await productRepo.TryDecreaseStockAsync(product.Id, item.Quantity, ct))
+                    throw new InsufficientStockException(product.Id, item.Quantity, product.StockQuantity);
+                lines.Add(new OrderLine(product.Id, product.Name, product.PriceCents, item.Quantity));
+            }
 
-        cart.Clear();
+            var order = Order.CreatePendingPayment(
+                command.Owner.IsGuest ? null : command.Owner.UserId, command.GuestEmail, lines);
+            await orderRepo.AddAsync(order, ct);
 
-        // Commits the order insert, every line's stock decrement, and the cart clear together —
-        // the same atomicity Java's @Transactional wrapper around reserve() provided.
-        await unitOfWork.SaveChangesAsync(ct);
-
-        return order;
-    }
+            cart.Clear();
+            await unitOfWork.SaveChangesAsync(ct);
+            return order;
+        }, ct);
 }
 
 internal sealed class CancelOrderCommandHandler(
@@ -49,15 +53,19 @@ internal sealed class CancelOrderCommandHandler(
                     ?? throw new OrderNotFoundException(command.OrderId);
         order.MarkCancelled();
 
-        foreach (var line in order.Lines)
+        return await unitOfWork.ExecuteInTransactionAsync(async () =>
         {
-            var product = await productRepo.FindByIdAsync(line.ProductId, ct)
-                          ?? throw new ProductNotFoundException(line.ProductId);
-            product.Restock(line.Quantity);
-        }
+            await RestockLinesAsync(productRepo, order, ct);
+            await unitOfWork.SaveChangesAsync(ct);
+            return true;
+        }, ct);
+    }
 
-        await unitOfWork.SaveChangesAsync(ct);
-        return true;
+    internal static async Task RestockLinesAsync(IProductRepository productRepo, Order order, CancellationToken ct)
+    {
+        foreach (var line in order.Lines)
+            if (!await productRepo.IncreaseStockAsync(line.ProductId, line.Quantity, ct))
+                throw new ProductNotFoundException(line.ProductId);
     }
 }
 
@@ -77,7 +85,8 @@ internal sealed class RequestReturnCommandHandler(IOrderRepository orderRepo, IU
 }
 
 internal sealed class ApproveReturnCommandHandler(
-    IOrderRepository orderRepo, IProductRepository productRepo, IPaymentGateway paymentGateway, IUnitOfWork unitOfWork)
+    IOrderRepository orderRepo, IProductRepository productRepo, ShopPaymentProcessorRegistry processors,
+    IUnitOfWork unitOfWork)
     : ICommandHandler<ApproveReturnCommand, OrderDto>
 {
     public async Task<OrderDto> Handle(ApproveReturnCommand command, CancellationToken ct)
@@ -87,17 +96,15 @@ internal sealed class ApproveReturnCommandHandler(
 
         order.ApproveReturn();
 
-        await paymentGateway.RefundAsync(
+        // Orders from before multi-processor support have no PaymentProcessor; they were Stripe.
+        await processors.ByName(order.PaymentProcessor ?? "stripe").RefundAsync(
             order.StripePaymentIntentId, order.TotalCents, command.OrderId.ToString(), ct);
 
-        foreach (var line in order.Lines)
+        return await unitOfWork.ExecuteInTransactionAsync(async () =>
         {
-            var product = await productRepo.FindByIdAsync(line.ProductId, ct)
-                          ?? throw new ProductNotFoundException(line.ProductId);
-            product.Restock(line.Quantity);
-        }
-
-        await unitOfWork.SaveChangesAsync(ct);
-        return order.ToDto();
+            await CancelOrderCommandHandler.RestockLinesAsync(productRepo, order, ct);
+            await unitOfWork.SaveChangesAsync(ct);
+            return order.ToDto();
+        }, ct);
     }
 }

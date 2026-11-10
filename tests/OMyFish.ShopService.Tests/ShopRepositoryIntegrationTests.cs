@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OMyFish.ShopService.Domain.Entities;
+using OMyFish.ShopService.Domain.Exceptions;
 using OMyFish.ShopService.Domain.ValueObjects;
 using OMyFish.ShopService.Infrastructure.Persistence;
 using OMyFish.ShopService.Infrastructure.Repositories;
@@ -39,7 +40,7 @@ public class ShopRepositoryIntegrationTests(PostgresFixture fixture)
     {
         var line = new OrderLine(Guid.NewGuid(), "Lure", 1500, 2);
         var order = Order.CreatePendingPayment(Guid.NewGuid(), null, [line]);
-        order.AttachCheckoutSession("sess_abc");
+        order.AttachCheckoutSession("sess_abc", "stripe");
 
         await using (var db = fixture.CreateDbContext())
         {
@@ -63,5 +64,64 @@ public class ShopRepositoryIntegrationTests(PostgresFixture fixture)
         Assert.Equal(OrderStatus.Paid, saved.Status);
         Assert.Equal("pi_xyz", saved.StripePaymentIntentId);
         Assert.Equal("Montreal", saved.ShippingAddress?.City);
+    }
+
+    [Fact]
+    public async Task TryDecreaseStockAsync_ConcurrentCallers_NeverOversell()
+    {
+        var product = Product.Create("Flash-sale lure", null, 999, null, stockQuantity: 5, active: true);
+        await using (var db = fixture.CreateDbContext())
+        {
+            await new ProductRepository(db).AddAsync(product);
+            await db.SaveChangesAsync();
+        }
+
+        // 20 callers race for 5 units, each on its own connection/context like separate requests.
+        var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(async _ =>
+        {
+            await using var db = fixture.CreateDbContext();
+            return await new ProductRepository(db).TryDecreaseStockAsync(product.Id, 1);
+        }));
+
+        Assert.Equal(5, results.Count(ok => ok));
+        await using var verifyDb = fixture.CreateDbContext();
+        var saved = await verifyDb.Products.AsNoTracking().SingleAsync(p => p.Id == product.Id);
+        Assert.Equal(0, saved.StockQuantity);
+    }
+
+    [Fact]
+    public async Task IdempotencyKeyRepository_SameKeyReservedTwice_SecondThrowsConflict()
+    {
+        var key = Guid.NewGuid().ToString();
+        await using (var db = fixture.CreateDbContext())
+            await new IdempotencyKeyRepository(db).ReserveAsync(key, IdempotencyRecord.Checkout, "user:a");
+
+        await using var db2 = fixture.CreateDbContext();
+        await Assert.ThrowsAsync<IdempotencyConflictException>(
+            () => new IdempotencyKeyRepository(db2).ReserveAsync(key, IdempotencyRecord.Checkout, "user:a"));
+    }
+
+    [Fact]
+    public async Task ProductCatalogReader_ReplicaUnreachable_FallsBackToThePrimary()
+    {
+        var product = Product.Create("Replica-fallback lure", null, 999, null, stockQuantity: 3, active: true);
+        await using (var db = fixture.CreateDbContext())
+        {
+            await new ProductRepository(db).AddAsync(product);
+            await db.SaveChangesAsync();
+        }
+
+        // A hostname that doesn't resolve, the same failure a stopped compose replica produces.
+        await using var replica = new ShopReadDbContext(new DbContextOptionsBuilder<ShopReadDbContext>()
+            .UseNpgsql("Host=no-such-replica.invalid;Database=omyfish;Username=x;Password=x;Timeout=2").Options);
+        await using var primary = fixture.CreateDbContext();
+        var reader = new ProductCatalogReader(
+            replica, primary, Microsoft.Extensions.Logging.Abstractions.NullLogger<ProductCatalogReader>.Instance);
+
+        var found = await reader.FindByIdAsync(product.Id);
+        var all = await reader.GetAllActiveAsync();
+
+        Assert.Equal("Replica-fallback lure", found!.Name);
+        Assert.Contains(all, p => p.Id == product.Id);
     }
 }

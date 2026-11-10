@@ -16,11 +16,12 @@ internal sealed class ShopExceptionFilter : IEndpointFilter
         {
             return Results.NotFound(new { error = e.Message });
         }
-        catch (CartEmptyException e)
+        catch (Exception e) when (e is CartEmptyException or ArgumentException)
         {
             return Results.BadRequest(new { error = e.Message });
         }
-        catch (Exception e) when (e is InsufficientStockException or InvalidOrderStateException)
+        catch (Exception e) when (e is InsufficientStockException or InvalidOrderStateException
+                                     or IdempotencyConflictException)
         {
             return Results.Conflict(new { error = e.Message });
         }
